@@ -30,6 +30,12 @@
 #define NVME_FDP_MAX_EVENTS 63
 #define NVME_FDP_MAXPIDS 128
 
+#define femu_err(fmt, ...) \
+    do { fprintf(stderr, "[FEMU] Err: " fmt, ## __VA_ARGS__); } while (0)
+
+#define femu_log(fmt, ...) \
+    do { printf("[FEMU] Log: " fmt, ## __VA_ARGS__); } while (0)
+
 QEMU_BUILD_BUG_ON(NVME_MAX_NAMESPACES > NVME_NSID_BROADCAST - 1);
 
 typedef struct NvmeCtrl NvmeCtrl;
@@ -162,6 +168,7 @@ static const uint8_t nvme_fdp_evf_shifts[FDP_EVT_MAX] = {
     /* CTRL events */
     [FDP_EVT_MEDIA_REALLOC]             = 32,
     [FDP_EVT_RUH_IMPLICIT_RU_CHANGE]    = 33,
+
 };
 
 typedef struct NvmeNamespaceParams {

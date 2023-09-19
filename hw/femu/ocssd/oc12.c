@@ -474,7 +474,7 @@ static uint16_t oc12_read(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
     }
 
     /* DMA user data */
-    if (nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, data_size, n)) {
+    if (nvme_map_prp(n, &req->sg, prp1, prp2, data_size)) {
         femu_err("oc12_read: malformed prp (sz:%lu)\n", data_size);
         err = NVME_INVALID_FIELD | NVME_DNR;
         goto fail_free;
@@ -553,7 +553,7 @@ static uint16_t oc12_write(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
     }
 
     /* DMA user data */
-    if (nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, data_size, n)) {
+    if (nvme_map_prp(n, &req->sg, prp1, prp2, data_size)) {
         femu_err("oc12_write: malformed prp (sz:%lu)\n", data_size);
         err = NVME_INVALID_FIELD | NVME_DNR;
         goto fail_free;

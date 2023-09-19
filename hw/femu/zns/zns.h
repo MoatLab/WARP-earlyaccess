@@ -132,13 +132,13 @@ typedef enum NvmeZoneState {
 } NvmeZoneState;
 
 #define NVME_SET_CSI(vec, csi) (vec |= (uint8_t)(1 << (csi)))
-
+/*
 typedef struct QEMU_PACKED NvmeLBAFE {
     uint64_t    zsze;
     uint8_t     zdes;
     uint8_t     rsvd9[7];
 } NvmeLBAFE;
-
+*/
 typedef struct QEMU_PACKED NvmeIdNsZoned {
     uint16_t    zoc;
     uint16_t    ozcs;
@@ -157,7 +157,7 @@ typedef struct NvmeZone {
     uint64_t        w_ptr;
     QTAILQ_ENTRY(NvmeZone) entry;
 } NvmeZone;
-
+/*
 typedef struct NvmeNamespaceParams {
     uint32_t nsid;
     QemuUUID uuid;
@@ -170,9 +170,9 @@ typedef struct NvmeNamespaceParams {
     uint32_t max_open_zones;
     uint32_t zd_extension_size;
 
-    struct zns_ssd *zns;
+    //struct zns_ssd *zns;
 } NvmeNamespaceParams;
-
+*/
 static inline uint32_t zns_nsid(NvmeNamespace *ns)
 {
     if (ns) {

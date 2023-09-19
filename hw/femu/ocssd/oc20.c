@@ -742,7 +742,8 @@ static uint16_t oc20_rw(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req, bool vector
         goto fail_free;
     }
 
-    if (nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, nlb << lbads, n)) {
+    //if (nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, nlb << lbads, n)) {
+    if (nvme_map_prp(n , &req->sg, prp1, prp2, nlb<<lbads )){
         femu_err("%s,malformed prp\n", __func__);
         err = NVME_INVALID_FIELD | NVME_DNR;
         goto fail_free;

@@ -1,9 +1,10 @@
 #include "qemu/osdep.h"
 #include "hw/qdev-properties.h"
-
 #include "./nvme.h"
 
 #define NVME_SPEC_VER (0x00010400)
+#define NVME_DEFAULT_RU_SIZE (96 * MiB)
+
 
 static void nvme_clear_ctrl(FemuCtrl *n, bool shutdown)
 {
@@ -246,11 +247,16 @@ static void nvme_process_db_io(FemuCtrl *n, hwaddr addr, int val)
 static void nvme_mmio_write(void *opaque, hwaddr addr, uint64_t data, unsigned size)
 {
     FemuCtrl *n = (FemuCtrl *)opaque;
+    femu_debug("nvme_mmio_write ");
     if (addr < sizeof(n->bar)) {
+        femu_debug("- nvme_write_bar(addr 0x%lx, data 0x%lx, size 0x%x ) \n", addr, data, size);
         nvme_write_bar(n, addr, data, size);
+        
     } else if (addr >= 0x1000 && addr < 0x1008) {
+        femu_debug("- nvme_process_db_admin(addr 0x%lx, data 0x%lx) size 0x%x  \n", addr, data, size);
         nvme_process_db_admin(n, addr, data);
     } else {
+        femu_debug("- nvme_process_db_io(addr 0x%lx, data 0x%lx) size 0x%x  \n", addr, data, size);
         nvme_process_db_io(n, addr, data);
     }
 }
@@ -323,6 +329,381 @@ static int nvme_check_constraints(FemuCtrl *n)
     return 0;
 }
 
+static inline void nvme_sg_init(FemuCtrl *n, NvmeSg *sg, bool dma)
+{
+    if (dma) {
+        pci_dma_sglist_init(&sg->qsg, PCI_DEVICE(n), 0);
+        sg->flags = NVME_SG_DMA;
+    } else {
+        qemu_iovec_init(&sg->iov, 0);
+    }
+
+    sg->flags |= NVME_SG_ALLOC;
+}
+
+static inline void nvme_sg_unmap(NvmeSg *sg)
+{
+    if (!(sg->flags & NVME_SG_ALLOC)) {
+        return;
+    }
+
+    if (sg->flags & NVME_SG_DMA) {
+        qemu_sglist_destroy(&sg->qsg);
+    } else {
+        qemu_iovec_destroy(&sg->iov);
+    }
+
+    memset(sg, 0x0, sizeof(*sg));
+}
+uint16_t femu_map_dptr(FemuCtrl *n, NvmeSg *sg, size_t len,
+                       NvmeCmd *cmd)
+{
+    uint64_t prp1, prp2;
+
+    switch (NVME_CMD_FLAGS_PSDT(cmd->flags)) {
+    case NVME_PSDT_PRP:
+        prp1 = le64_to_cpu(cmd->dptr.prp1);
+        prp2 = le64_to_cpu(cmd->dptr.prp2);
+        return nvme_map_prp(n, sg, prp1, prp2, len);
+        //uint16_t nvme_map_prp(QEMUSGList *qsg, QEMUIOVector *iov, uint64_t prp1, uint64_t prp2, uint32_t len, FemuCtrl *n)
+        //../hw/femu/femu.c:336:29: error: passing argument 1 of ‘nvme_map_prp’ from incompatible pointer type [-Werror=incompatible-pointer-types]
+    case NVME_PSDT_SGL_MPTR_CONTIGUOUS:
+    case NVME_PSDT_SGL_MPTR_SGL:
+        return nvme_map_sgl(n, sg, cmd->dptr.sgl, len, cmd);
+    default:
+        return NVME_INVALID_FIELD;
+    }
+}
+
+/*
+
+static uint16_t nvme_map_mdata(FemuCtrl *n, uint32_t nlb, NvmeRequest *req)
+{
+    NvmeNamespace *ns = req->ns;
+    size_t len = nvme_m2b(ns, nlb);
+    uint16_t status;
+
+    if (nvme_ns_ext(ns)) {
+        NvmeSg sg;
+
+        len += nvme_l2b(ns, nlb);
+
+        status = femu_map_dptr(n, &sg, len, &req->cmd);
+        if (status) {
+            return status;
+        }
+
+        nvme_sg_init(n, &req->sg, sg.flags & NVME_SG_DMA);
+        nvme_sg_split(&sg, ns, NULL, &req->sg);
+        nvme_sg_unmap(&sg);
+
+        return NVME_SUCCESS;
+    }
+
+    return nvme_map_mptr(n, &req->sg, len, &req->cmd);
+}
+
+
+static uint16_t nvme_tx_interleaved(FemuCtrl *n, NvmeSg *sg, uint8_t *ptr,
+                                    uint32_t len, uint32_t bytes,
+                                    int32_t skip_bytes, int64_t offset,
+                                    NvmeTxDirection dir)
+{
+    hwaddr addr;
+    uint32_t trans_len, count = bytes;
+    bool dma = sg->flags & NVME_SG_DMA;
+    int64_t sge_len;
+    int sg_idx = 0;
+    int ret;
+
+    assert(sg->flags & NVME_SG_ALLOC);
+
+    while (len) {
+        sge_len = dma ? sg->qsg.sg[sg_idx].len : sg->iov.iov[sg_idx].iov_len;
+
+        if (sge_len - offset < 0) {
+            offset -= sge_len;
+            sg_idx++;
+            continue;
+        }
+
+        if (sge_len == offset) {
+            offset = 0;
+            sg_idx++;
+            continue;
+        }
+
+        trans_len = MIN(len, count);
+        trans_len = MIN(trans_len, sge_len - offset);
+
+        if (dma) {
+            addr = sg->qsg.sg[sg_idx].base + offset;
+        } else {
+            addr = (hwaddr)(uintptr_t)sg->iov.iov[sg_idx].iov_base + offset;
+        }
+
+        if (dir == NVME_TX_DIRECTION_TO_DEVICE) {
+            ret = nvme_addr_read(n, addr, ptr, trans_len);
+        } else {
+            ret = nvme_addr_write(n, addr, ptr, trans_len);
+        }
+
+        if (ret) {
+            return NVME_DATA_TRAS_ERROR;
+        }
+
+        ptr += trans_len;
+        len -= trans_len;
+        count -= trans_len;
+        offset += trans_len;
+
+        if (count == 0) {
+            count = bytes;
+            offset += skip_bytes;
+        }
+    }
+
+    return NVME_SUCCESS;
+}*/
+/** hw/nvme/subsys.c */
+/*
+ * QEMU NVM Express Subsystem: nvme-subsys
+ *
+ * Copyright (c) 2021 Minwoo Im <minwoo.im.dev@gmail.com>
+ *
+ * This code is licensed under the GNU GPL v2.  Refer COPYING.
+ */
+
+#include "qemu/osdep.h"
+#include "qemu/units.h"
+#include "qapi/error.h"
+
+#include "nvme.h"
+
+
+static void nvme_attach_ns(FemuCtrl *n, NvmeNamespace *ns)
+{
+    //uint32_t nsid = ns->params.nsid;
+    //assert(nsid && nsid <= NVME_MAX_NAMESPACES);
+
+    //n->namespaces[nsid] = ns;
+    n->namespaces = ns; 
+    ns->attached++;
+
+    n->dmrsl = MIN_NON_ZERO(n->dmrsl,
+                            BDRV_REQUEST_MAX_BYTES / nvme_l2b(ns, 1));
+}
+
+static int nvme_subsys_reserve_cntlids(FemuCtrl *n, int start, int num)
+{
+    NvmeSubsystem *subsys = n->subsys;
+    NvmeSecCtrlList *list = &n->sec_ctrl_list;
+    NvmeSecCtrlEntry *sctrl;
+    int i, cnt = 0;
+
+    for (i = start; i < ARRAY_SIZE(subsys->ctrls) && cnt < num; i++) {
+        if (!subsys->ctrls[i]) {
+            sctrl = &list->sec[cnt];
+            sctrl->scid = cpu_to_le16(i);
+            subsys->ctrls[i] = SUBSYS_SLOT_RSVD;
+            cnt++;
+        }
+    }
+
+    return cnt;
+}
+
+static void nvme_subsys_unreserve_cntlids(FemuCtrl *n)
+{
+    NvmeSubsystem *subsys = n->subsys;
+    NvmeSecCtrlList *list = &n->sec_ctrl_list;
+    NvmeSecCtrlEntry *sctrl;
+    int i, cntlid;
+
+    for (i = 0; i < n->params.sriov_max_vfs; i++) {
+        sctrl = &list->sec[i];
+        cntlid = le16_to_cpu(sctrl->scid);
+
+        if (cntlid) {
+            assert(subsys->ctrls[cntlid] == SUBSYS_SLOT_RSVD);
+            subsys->ctrls[cntlid] = NULL;
+            sctrl->scid = 0;
+        }
+    }
+}
+
+//int nvme_subsys_register_ctrl(FemuCtrl *n)
+int femu_subsys_register_ctrl(FemuCtrl *n)
+{
+    NvmeSubsystem *subsys = n->subsys;
+    NvmeSecCtrlEntry *sctrl = nvme_sctrl(n);
+    int cntlid, nsid, num_rsvd, num_vfs = n->params.sriov_max_vfs;
+
+    if (pci_is_vf(&n->parent_obj)) {
+        cntlid = le16_to_cpu(sctrl->scid);
+    } else {
+        for (cntlid = 0; cntlid < ARRAY_SIZE(subsys->ctrls); cntlid++) {
+            if (!subsys->ctrls[cntlid]) {
+                break;
+            }
+        }
+
+        if (cntlid == ARRAY_SIZE(subsys->ctrls)) {
+            //error_setg(errp, "no more free controller id");
+            return -1;
+        }
+
+        num_rsvd = nvme_subsys_reserve_cntlids(n, cntlid + 1, num_vfs);
+        if (num_rsvd != num_vfs) {
+            nvme_subsys_unreserve_cntlids(n);
+            //error_setg(errp,
+            //           "no more free controller ids for secondary controllers");
+            return -1;
+        }
+    }
+
+    if (!subsys->serial) {
+        subsys->serial = g_strdup(n->params.serial);
+    } else if (strcmp(subsys->serial, n->params.serial)) {
+        //error_setg(errp, "invalid controller serial");
+        return -1;
+    }
+
+    subsys->ctrls[cntlid] = n;
+
+    for (nsid = 1; nsid < ARRAY_SIZE(subsys->namespaces); nsid++) {
+        NvmeNamespace *ns = subsys->namespaces[nsid];
+        if (ns && ns->params.shared && !ns->params.detached) {
+            nvme_attach_ns(n, ns);
+        }
+    }
+
+    return cntlid;
+}
+//void nvme_subsys_unregister_ctrl(NvmeSubsystem *subsys, FemuCtrl *n)
+void femu_subsys_unregister_ctrl(NvmeSubsystem *subsys, FemuCtrl *n)
+{
+    if (pci_is_vf(&n->parent_obj)) {
+        subsys->ctrls[n->cntlid] = SUBSYS_SLOT_RSVD;
+    } else {
+        subsys->ctrls[n->cntlid] = NULL;
+        nvme_subsys_unreserve_cntlids(n);
+    }
+
+    n->cntlid = -1;
+}
+
+static bool nvme_calc_rgif(uint16_t nruh, uint16_t nrg, uint8_t *rgif)
+{
+    uint16_t val;
+    unsigned int i;
+
+    if (unlikely(nrg == 1)) {
+        /* PIDRG_NORGI scenario, all of pid is used for PHID */
+        *rgif = 0;
+        return true;
+    }
+
+    val = nrg;
+    i = 0;
+    while (val) {
+        val >>= 1;
+        i++;
+    }
+    *rgif = i;
+
+    /* ensure remaining bits suffice to represent number of phids in a RG */
+    if (unlikely((UINT16_MAX >> i) < nruh)) {
+        *rgif = 0;
+        return false;
+    }
+
+    return true;
+}
+
+static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //setting nrg and runs
+{
+    NvmeEnduranceGroup *endgrp = &subsys->endgrp;
+
+    if (!subsys->params.fdp.runs) {
+        error_setg(errp, "fdp.runs must be non-zero");
+        return false;
+    }
+
+    endgrp->fdp.runs = subsys->params.fdp.runs;
+
+    if (!subsys->params.fdp.nrg) {
+        error_setg(errp, "fdp.nrg must be non-zero");
+        return false;
+    }
+
+    endgrp->fdp.nrg = subsys->params.fdp.nrg;
+
+    if (!subsys->params.fdp.nruh) {
+        error_setg(errp, "fdp.nruh must be non-zero");
+        return false;
+    }
+
+    endgrp->fdp.nruh = subsys->params.fdp.nruh;
+
+    if (!nvme_calc_rgif(endgrp->fdp.nruh, endgrp->fdp.nrg, &endgrp->fdp.rgif)) {
+        error_setg(errp,
+                   "cannot derive a valid rgif (nruh %"PRIu16" nrg %"PRIu32")",
+                   endgrp->fdp.nruh, endgrp->fdp.nrg);
+        return false;
+    }
+
+    endgrp->fdp.ruhs = g_new(NvmeRuHandle, endgrp->fdp.nruh);
+
+    for (uint16_t ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
+        endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
+            .ruht = NVME_RUHT_INITIALLY_ISOLATED,
+            .ruha = NVME_RUHA_UNUSED,
+        };
+
+        endgrp->fdp.ruhs[ruhid].rus = g_new(NvmeReclaimUnit, endgrp->fdp.nrg);
+    }
+
+    endgrp->fdp.enabled = true;
+    femu_log("fdp.enabled = true");
+
+    return true;
+}
+
+static bool nvme_subsys_setup(NvmeSubsystem *subsys, Error **errp)  //OK
+{
+    const char *nqn = subsys->params.nqn ?
+        subsys->params.nqn : subsys->parent_obj.id;
+
+    snprintf((char *)subsys->subnqn, sizeof(subsys->subnqn),
+             "nqn.2019-08.org.qemu:%s", nqn);
+
+    if (subsys->params.fdp.enabled && !nvme_subsys_setup_fdp(subsys, errp)) {
+        return false;
+    }
+
+    return true;
+}
+
+static void nvme_subsys_realize(DeviceState *dev, Error **errp)
+{
+    NvmeSubsystem *subsys = NVME_SUBSYS(dev);
+
+    qbus_init(&subsys->bus, sizeof(NvmeBus), TYPE_NVME_BUS, dev, dev->id);
+
+    nvme_subsys_setup(subsys, errp);
+}
+
+static Property nvme_subsystem_props[] = {
+    DEFINE_PROP_STRING("nqn", NvmeSubsystem, params.nqn),
+    DEFINE_PROP_BOOL("fdp", NvmeSubsystem, params.fdp.enabled, false),
+    DEFINE_PROP_SIZE("fdp.runs", NvmeSubsystem, params.fdp.runs,
+                     NVME_DEFAULT_RU_SIZE),
+    DEFINE_PROP_UINT32("fdp.nrg", NvmeSubsystem, params.fdp.nrg, 1),
+    DEFINE_PROP_UINT16("fdp.nruh", NvmeSubsystem, params.fdp.nruh, 0),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void nvme_ns_init_identify(FemuCtrl *n, NvmeIdNs *id_ns)
 {
     int npdg;
@@ -336,7 +717,7 @@ static void nvme_ns_init_identify(FemuCtrl *n, NvmeIdNs *id_ns)
     id_ns->dpc           = n->dpc;
     id_ns->dps           = n->dps;
     id_ns->dlfeat        = 0x9;
-    id_ns->lbaf[0].lbads = 9;
+    id_ns->lbaf[0].lbads = 9;               //512?
     id_ns->lbaf[0].ms    = 0;
 
     npdg = 1;
@@ -366,6 +747,8 @@ static int nvme_init_namespace(FemuCtrl *n, NvmeNamespace *ns, Error **errp)
     ns->util = bitmap_new(num_blks);
     ns->uncorrectable = bitmap_new(num_blks);
 
+    // ns->subsys = n->subsys;
+
     return 0;
 }
 
@@ -385,6 +768,7 @@ static int nvme_init_namespaces(FemuCtrl *n, Error **errp)
         if (nvme_init_namespace(n, ns, errp)) {
             return 1;
         }
+
     }
 
     return 0;
@@ -394,11 +778,14 @@ static void nvme_init_ctrl(FemuCtrl *n)
 {
     NvmeIdCtrl *id = &n->id_ctrl;
     uint8_t *pci_conf = n->parent_obj.config;
+    uint32_t ctratt;
+
     char *subnqn;
     int i;
 
     id->vid = cpu_to_le16(pci_get_word(pci_conf + PCI_VENDOR_ID));
     id->ssvid = cpu_to_le16(pci_get_word(pci_conf + PCI_SUBSYSTEM_VENDOR_ID));
+    ctratt = NVME_CTRATT_ELBAS;
 
     id->rab          = 6;
     id->ieee[0]      = 0x00;
@@ -429,7 +816,31 @@ static void nvme_init_ctrl(FemuCtrl *n)
     id->psd[0].mp    = cpu_to_le16(0x9c4);
     id->psd[0].enlat = cpu_to_le32(0x10);
     id->psd[0].exlat = cpu_to_le32(0x4);
+    id->cntlid = cpu_to_le16(n->cntlid);
 
+    if (n->subsys) {
+        id->cmic |= NVME_CMIC_MULTI_CTRL;
+        ctratt |= NVME_CTRATT_ENDGRPS;
+
+        id->endgidmax = cpu_to_le16(0x1);       //Both QEMU and FEMU supports only 1 endurance group at the moment
+
+        if (n->subsys->endgrp.fdp.enabled) {
+            ctratt |= NVME_CTRATT_FDPS;
+            femu_log("QEMU NVMe : \"I'm NVMe fdp enabled device!\" ctratt hex:%x \n",ctratt);
+                // AUDIT sprintf(filename0, "write_log.csv");
+                //fp = fopen(filename0, "w");
+                //fprintf(fp, "test write\n");
+                //fprintf(fp, "start(s),\t\tend(s),\t\tstart(us),\t\tend(us),\t\ttime(s),\t\ttime(us),\t\tpid,\t\truhid,\t\tslba,\t\tnlb,\t\tru->ruamw,\t\truh_action\n");
+                //fclose(fp);
+        }else{
+            femu_log("QEMU NVMe : \"VMe fdp disabled device!\" ctratt hex:%x \n",ctratt);
+        }
+    }else{
+        femu_log("QEMU NVMe : \"n->subsys NULL in this device!\" ctratt hex:%x \n",ctratt);
+    }
+
+
+    id->ctratt = cpu_to_le32(ctratt);
     n->features.arbitration     = 0x1f0f0706;
     n->features.power_mgmt      = 0;
     n->features.temp_thresh     = 0x14d;
@@ -464,6 +875,45 @@ static void nvme_init_ctrl(FemuCtrl *n)
     n->bar.intmc = n->bar.intms = 0;
     n->temperature = NVME_TEMPERATURE;
 }
+
+static int nvme_init_subsys(FemuCtrl *n)
+{
+    int cntlid;
+
+    if (!n->subsys) {
+        return 0;
+    }
+
+    //cntlid = nvme_subsys_register_ctrl(n);
+    cntlid = femu_subsys_register_ctrl(n);
+    if (cntlid < 0) {
+        return -1;
+    }
+
+    n->cntlid = cntlid;
+
+    return 0;
+}
+
+static void nvme_subsys_class_init(ObjectClass *oc, void *data) //OK
+{
+    DeviceClass *dc = DEVICE_CLASS(oc);
+
+    set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
+
+    dc->realize = nvme_subsys_realize;
+    dc->desc = "Virtual NVMe subsystem";
+    dc->hotpluggable = false;
+
+    device_class_set_props(dc, nvme_subsystem_props);
+}
+
+static const TypeInfo nvme_subsys_info = {
+    .name = TYPE_NVME_SUBSYS,
+    .parent = TYPE_DEVICE,
+    .class_init = nvme_subsys_class_init,
+    .instance_size = sizeof(NvmeSubsystem),
+};
 
 static void nvme_init_cmb(FemuCtrl *n)
 {
@@ -560,9 +1010,10 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     n->features.int_vector_config = g_malloc0(sizeof(*n->features.int_vector_config) * (n->nr_io_queues + 1));
 
     nvme_init_pci(n);
+    if(!n->subsys)
+        nvme_init_subsys(n);
     nvme_init_ctrl(n);
     nvme_init_namespaces(n, errp);
-
     nvme_register_extensions(n);
 
     if (n->ext_ops.init) {
@@ -680,7 +1131,8 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("ch_xfer_lat", FemuCtrl, bb_params.ch_xfer_lat, 0),
     DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.gc_thres_pcent, 75),
     DEFINE_PROP_INT32("gc_thres_pcent_high", FemuCtrl, bb_params.gc_thres_pcent_high, 95),
-    DEFINE_PROP_END_OF_LIST(),
+    DEFINE_PROP_LINK("subsys", FemuCtrl, subsys, TYPE_NVME_SUBSYS,
+                     NvmeSubsystem *),    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription femu_vmstate = {
@@ -723,3 +1175,10 @@ static void femu_register_types(void)
 }
 
 type_init(femu_register_types)
+
+static void nvme_subsys_register_types(void)
+{
+    type_register_static(&nvme_subsys_info);
+}
+
+type_init(nvme_subsys_register_types)   //Note Does this affects the "type_init(femu_register_types)" in the last line of this file?

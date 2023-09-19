@@ -202,6 +202,16 @@
 #include "dif.h"
 #include "trace.h"
 
+//FILE *fp, *fp2, *fp3, *fp4, *fp5, *fp6;
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/time.h>
+
+FILE *fp;
+char filename0[100] = {0,};
+struct timeval start, end;
+
+
 #define NVME_MAX_IOQPAIRS 0xffff
 #define NVME_DB_SIZE  4
 #define NVME_SPEC_VER 0x00010400
@@ -223,6 +233,8 @@
         qemu_log_mask(LOG_GUEST_ERROR, #trace \
             " in %s: " fmt "\n", __func__, ## __VA_ARGS__); \
     } while (0)
+
+
 
 static const bool nvme_feature_support[NVME_FID_MAX] = {
     [NVME_ARBITRATION]              = true,
@@ -461,7 +473,9 @@ static NvmeFdpEvent *nvme_fdp_alloc_event(NvmeCtrl *n, NvmeFdpEventBuffer *ebuf)
 
 static inline int log_event(NvmeRuHandle *ruh, uint8_t event_type)
 {
-    return (ruh->event_filter >> nvme_fdp_evf_shifts[event_type]) & 0x1;
+    //return (ruh->event_filter >> nvme_fdp_evf_shifts[event_type]) & 0x1;
+    return (ruh->event_filter >> nvme_fdp_evf_shifts[event_type]) & 0xff;
+
 }
 
 static bool nvme_update_ruh(NvmeCtrl *n, NvmeNamespace *ns, uint16_t pid)
@@ -480,23 +494,43 @@ static bool nvme_update_ruh(NvmeCtrl *n, NvmeNamespace *ns, uint16_t pid)
 
     ruh = &endgrp->fdp.ruhs[ruhid];
     ru = &ruh->rus[rg];
+    femu_log("ruh->event_filter %lu (>> nvme_fdp_evf_shifts[NFW]%u &0xff = %u) \n", \
+                                            ruh->event_filter,nvme_fdp_evf_shifts[FDP_EVT_RU_NOT_FULLY_WRITTEN],\
+                                            nvme_fdp_evf_shifts[FDP_EVT_RU_NOT_FULLY_WRITTEN] & 0xff);
+    femu_log("ruh->event_filter %lu (>> nvme_fdp_evf_shifts[MRE]%u &0xff = %u) \n", \
+                                            ruh->event_filter,nvme_fdp_evf_shifts[FDP_EVT_MEDIA_REALLOC],\
+                                            nvme_fdp_evf_shifts[FDP_EVT_MEDIA_REALLOC] & 0xff);
 
     if (ru->ruamw) {
-        if (log_event(ruh, FDP_EVT_RU_NOT_FULLY_WRITTEN)) {
+                            //0                                         //32
+        if (log_event(ruh, FDP_EVT_RU_NOT_FULLY_WRITTEN) || log_event(ruh, FDP_EVT_MEDIA_REALLOC)) {
             e = nvme_fdp_alloc_event(n, &endgrp->fdp.host_events);
-            e->type = FDP_EVT_RU_NOT_FULLY_WRITTEN;
+            
+            if( log_event(ruh, FDP_EVT_MEDIA_REALLOC)){
+                e->type = FDP_EVT_MEDIA_REALLOC;
+                fprintf(fp, "%u\n",FDP_EVT_MEDIA_REALLOC);
+            
+            }
+            else{
+                fprintf(fp, "%u\n",FDP_EVT_RU_NOT_FULLY_WRITTEN);
+                e->type = FDP_EVT_RU_NOT_FULLY_WRITTEN;
+            
+            }
+            
             e->flags = FDPEF_PIV | FDPEF_NSIDV | FDPEF_LV;
             e->pid = cpu_to_le16(pid);
             e->nsid = cpu_to_le32(ns->params.nsid);
             e->rgid = cpu_to_le16(rg);
             e->ruhid = cpu_to_le16(ruhid);
+            fprintf(fp, "%u\n",FDP_EVT_RU_NOT_FULLY_WRITTEN);
         }
 
         /* log (eventual) GC overhead of prematurely swapping the RU */
+        //mbmw stands for mb of media written, which contains both write from the host and device itself
         nvme_fdp_stat_inc(&endgrp->fdp.mbmw, nvme_l2b(ns, ru->ruamw));
     }
 
-    ru->ruamw = ruh->ruamw;
+    ru->ruamw = ruh->ruamw; //keep using different RU so the ru->ruamw is shifted or erased..
 
     return true;
 }
@@ -3465,22 +3499,37 @@ static void nvme_do_write_fdp(NvmeCtrl *n, NvmeRequest *req, uint64_t slba,
         ph = 0;
         rg = 0;
     }
-
-    ruhid = ns->fdp.phs[ph];
+    // rw->dspec    --> this comes with the nvme request, 
+    ruhid = ns->fdp.phs[ph];    //ns -> handler index 
     ru = &ns->endgrp->fdp.ruhs[ruhid].rus[rg];
 
     nvme_fdp_stat_inc(&ns->endgrp->fdp.hbmw, data_size);
     nvme_fdp_stat_inc(&ns->endgrp->fdp.mbmw, data_size);
 
     while (nlb) {
-        if (nlb < ru->ruamw) {
+        if (nlb < ru->ruamw) {        
+            gettimeofday(&end,NULL);
+
+            //              1           2       3           4           5           6           7       8       9       10          11              
+        	//fprintf(fp, "start(s)   end(s)  start(us)   end(us)     time(s)     time(us),   pid,    ruhid, slba,   nlb,    ru->ruamw, ruh_action\n");
+            fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t%u\n",\
+                        start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,\
+                        (end.tv_sec - start.tv_sec), (end.tv_usec-start.tv_usec),\
+                        pid, ruhid, slba, nlb, ru->ruamw, 1);
             ru->ruamw -= nlb;
+            //data has written. latency model here
             break;
         }
 
         nlb -= ru->ruamw;
+        gettimeofday(&end,NULL);
+        fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t\n",\
+                     start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,\
+                     (end.tv_sec - start.tv_sec), (end.tv_usec-start.tv_usec),\
+                     pid, ruhid, slba, nlb, ru->ruamw);
         nvme_update_ruh(n, ns, pid);
     }
+    fclose(fp);
 }
 
 static uint16_t nvme_do_write(NvmeCtrl *n, NvmeRequest *req, bool append,
@@ -3528,6 +3577,7 @@ static uint16_t nvme_do_write(NvmeCtrl *n, NvmeRequest *req, bool append,
     }
 
     if (ns->params.zoned) {
+        //femu_log("nvme_do_write on slba:%lu and device is zoned device \n",req->slba);
         zone = nvme_get_zone_by_slba(ns, slba);
         assert(zone);
 
@@ -3593,6 +3643,8 @@ static uint16_t nvme_do_write(NvmeCtrl *n, NvmeRequest *req, bool append,
             zone->w_ptr += nlb;
         }
     } else if (ns->endgrp && ns->endgrp->fdp.enabled) {
+        //femu_log("nvme_do_write on slba:%lu and device is fdp enabled \n",req->slba);
+
         nvme_do_write_fdp(n, req, slba, nlb);
     }
 
@@ -4426,6 +4478,9 @@ static uint16_t nvme_io_cmd(NvmeCtrl *n, NvmeRequest *req)
 
     req->ns = ns;
 
+    sprintf(filename0, "write_log.csv");
+    fp = fopen(filename0, "a");
+
     switch (req->cmd.opcode) {
     case NVME_CMD_WRITE_ZEROES:
         return nvme_write_zeroes(n, req);
@@ -4448,8 +4503,10 @@ static uint16_t nvme_io_cmd(NvmeCtrl *n, NvmeRequest *req)
     case NVME_CMD_ZONE_MGMT_RECV:
         return nvme_zone_mgmt_recv(n, req);
     case NVME_CMD_IO_MGMT_RECV:
+        femu_log("NVME_CMD_IO_MGMT_RECV here\n");
         return nvme_io_mgmt_recv(n, req);
     case NVME_CMD_IO_MGMT_SEND:
+        femu_log("NVME_CMD_IO_MGMT_SEND here\n");
         return nvme_io_mgmt_send(n, req);
     default:
         assert(false);
@@ -5149,25 +5206,34 @@ static uint16_t nvme_get_log(NvmeCtrl *n, NvmeRequest *req)
     }
 
     switch (lid) {
-    case NVME_LOG_ERROR_INFO:
+    case NVME_LOG_ERROR_INFO:   //1
+        femu_log("NVME_LOG_ERROR_INFO here\n");
         return nvme_error_info(n, rae, len, off, req);
-    case NVME_LOG_SMART_INFO:
+    case NVME_LOG_SMART_INFO:   //2
+        femu_log("NVME_LOG_SMART_INFO here\n");
         return nvme_smart_info(n, rae, len, off, req);
-    case NVME_LOG_FW_SLOT_INFO:
+    case NVME_LOG_FW_SLOT_INFO: //3
+        femu_log("NVME_LOG_FW_SLOT_INFO here\n");
         return nvme_fw_log_info(n, len, off, req);
     case NVME_LOG_CHANGED_NSLIST:
+        femu_log("NVME_LOG_CHANGED_NSLIST here\n");
         return nvme_changed_nslist(n, rae, len, off, req);
     case NVME_LOG_CMD_EFFECTS:
         return nvme_cmd_effects(n, csi, len, off, req);
     case NVME_LOG_ENDGRP:
+        femu_log("NVME_LOG_ENDGRP here\n");
         return nvme_endgrp_info(n, rae, len, off, req);
     case NVME_LOG_FDP_CONFS:
+        femu_log("NVME_LOG_FDP_CONFS here\n");
         return nvme_fdp_confs(n, lspi, len, off, req);
     case NVME_LOG_FDP_RUH_USAGE:
+        femu_log("NVME_LOG_FDP_RUH_USAGE here\n");
         return nvme_fdp_ruh_usage(n, lspi, dw10, dw12, len, off, req);
     case NVME_LOG_FDP_STATS:
+        femu_log("NVME_LOG_FDP_STATS here\n");
         return nvme_fdp_stats(n, lspi, len, off, req);
     case NVME_LOG_FDP_EVENTS:
+        femu_log("NVME_LOG_FDP_EVENTS here\n");
         return nvme_fdp_events(n, lspi, len, off, req);
     default:
         trace_pci_nvme_err_invalid_log_page(nvme_cid(req), lid);
@@ -6048,7 +6114,7 @@ static uint16_t nvme_set_feature_fdp_events(NvmeCtrl *n, NvmeNamespace *ns,
     NvmeCmd *cmd = &req->cmd;
     uint32_t cdw11 = le32_to_cpu(cmd->cdw11);
     uint16_t ph = cdw11 & 0xffff;
-    uint8_t noet = (cdw11 >> 16) & 0xff;
+    uint8_t noet = (cdw11 >> 16) & 0xff;        //6
     uint16_t ret, ruhid;
     uint8_t enable = le32_to_cpu(cmd->cdw12) & 0x1;
     uint8_t event_mask = 0;
@@ -6073,15 +6139,23 @@ static uint16_t nvme_set_feature_fdp_events(NvmeCtrl *n, NvmeNamespace *ns,
     if (ret) {
         return ret;
     }
-
+    femu_log("noet ((cdw11 >> 16) & 0xff) %u \n", noet);
     for (i = 0; i < noet; i++) {
         event_mask |= (1 << nvme_fdp_evf_shifts[events[i]]);
+
     }
+    femu_log("(1/2) event_mask set: %u (|= (1 << nvme_fdp_evf_shifts[events[i]])) \n", event_mask);
 
     if (enable) {
+        
+        femu_log("(2/2) ruh->event_filter(%lu) |= event_mask(%u) = %lu((cmd->cdw12) & 0x1 = enabled =true)\n",ruh->event_filter , event_mask, (ruh->event_filter | event_mask));
         ruh->event_filter |= event_mask;
+
     } else {
+
+        femu_log("(2/2) ruh->event_filter(%lu) = ruh->event_filter(%lu) & ~event_mask(%u); ((cmd->cdw12) & 0x1 = disabled = false)\n", (ruh->event_filter & ~event_mask), ruh->event_filter , ~event_mask);
         ruh->event_filter = ruh->event_filter & ~event_mask;
+
     }
 
     return NVME_SUCCESS;
@@ -7244,6 +7318,8 @@ static int nvme_start_ctrl(NvmeCtrl *n)
     nvme_set_timestamp(n, 0ULL);
 
     nvme_select_iocs(n);
+    
+
 
     return 0;
 }
@@ -8239,7 +8315,17 @@ static void nvme_init_ctrl(NvmeCtrl *n, PCIDevice *pci_dev)
 
         if (n->subsys->endgrp.fdp.enabled) {
             ctratt |= NVME_CTRATT_FDPS;
+            femu_log("QEMU NVMe : \"I'm NVMe fdp enabled device!\" ctratt hex:%x \n",ctratt);
+                sprintf(filename0, "write_log.csv");
+                fp = fopen(filename0, "w");
+                fprintf(fp, "test write\n");
+                fprintf(fp, "start(s),\t\tend(s),\t\tstart(us),\t\tend(us),\t\ttime(s),\t\ttime(us),\t\tpid,\t\truhid,\t\tslba,\t\tnlb,\t\tru->ruamw,\t\truh_action\n");
+                fclose(fp);
+        }else{
+            femu_log("QEMU NVMe : \"VMe fdp disabled device!\" ctratt hex:%x \n",ctratt);
         }
+    }else{
+        femu_log("QEMU NVMe : \"n->subsys NULL in this device!\" ctratt hex:%x \n",ctratt);
     }
 
     id->ctratt = cpu_to_le32(ctratt);
@@ -8359,7 +8445,9 @@ static void nvme_exit(PCIDevice *pci_dev)
     g_free(n->cq);
     g_free(n->sq);
     g_free(n->aer_reqs);
-
+    
+    fclose(fp);
+    
     if (n->params.cmb_size_mb) {
         g_free(n->cmb.buf);
     }

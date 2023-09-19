@@ -583,19 +583,20 @@ enum NvmePsdt {
 };
 
 typedef struct QEMU_PACKED NvmeCmd {
-    uint8_t     opcode;
-    uint8_t     flags;
-    uint16_t    cid;
-    uint32_t    nsid;
-    uint64_t    res1;
-    uint64_t    mptr;
-    NvmeCmdDptr dptr;
-    uint32_t    cdw10;
-    uint32_t    cdw11;
-    uint32_t    cdw12;
-    uint32_t    cdw13;
-    uint32_t    cdw14;
-    uint32_t    cdw15;
+                            //#include block/nvme.h
+    uint8_t     opcode;     //opcode
+    uint8_t     flags;      //flag
+    uint16_t    cid;        //cid
+    uint32_t    nsid;       //nsid
+    uint64_t    res1;       //cdw2 cdw3
+    uint64_t    mptr;       //mptr
+    NvmeCmdDptr dptr;       //dptr
+    uint32_t    cdw10;      //slba
+    uint32_t    cdw11;      //slba
+    uint32_t    cdw12;      //nlb control
+    uint32_t    cdw13;      //dsmgmt8 rsvd8 *dspec16
+    uint32_t    cdw14;      //reftag
+    uint32_t    cdw15;      //apptag appmask
 } NvmeCmd;
 
 #define NVME_CMD_FLAGS_FUSE(flags) (flags & 0x3)

@@ -184,6 +184,7 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)
     }
 
     endgrp->fdp.enabled = true;
+    femu_log("fdp.enabled = true");
 
     return true;
 }
