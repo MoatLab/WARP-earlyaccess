@@ -48,7 +48,7 @@ enum NvmeBarRegs {
     NVME_REG_CMBSZ   = offsetof(NvmeBar, cmbsz),
     NVME_REG_BPINFO  = offsetof(NvmeBar, bpinfo),
     NVME_REG_BPRSEL  = offsetof(NvmeBar, bprsel),
-    NVME_REG_BPMBL   = offsetof(NvmeBar, bpmbl),
+    NVME_REG_BPMBL    = offsetof(NvmeBar, bpmbl),
     NVME_REG_CMBMSC  = offsetof(NvmeBar, cmbmsc),
     NVME_REG_CMBSTS  = offsetof(NvmeBar, cmbsts),
     NVME_REG_PMRCAP  = offsetof(NvmeBar, pmrcap),

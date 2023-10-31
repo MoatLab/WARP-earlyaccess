@@ -473,7 +473,7 @@ static inline bool nvme_rg_valid(NvmeEnduranceGroup *endgrp, uint16_t rg)
     return rg < endgrp->fdp.nrg;
 }
 
-static inline uint16_t nvme_pid2ph(NvmeNamespace *ns, uint16_t pid)
+uint16_t nvme_pid2ph(NvmeNamespace *ns, uint16_t pid)
 {
     uint16_t rgif = ns->endgrp->fdp.rgif;
 
@@ -484,7 +484,7 @@ static inline uint16_t nvme_pid2ph(NvmeNamespace *ns, uint16_t pid)
     return pid & ((1 << (15 - rgif)) - 1);
 }
 
-static inline uint16_t nvme_pid2rg(NvmeNamespace *ns, uint16_t pid)
+uint16_t nvme_pid2rg(NvmeNamespace *ns, uint16_t pid)
 {
     uint16_t rgif = ns->endgrp->fdp.rgif;
 
@@ -495,7 +495,7 @@ static inline uint16_t nvme_pid2rg(NvmeNamespace *ns, uint16_t pid)
     return pid >> (16 - rgif);
 }
 
-static inline bool nvme_parse_pid(NvmeNamespace *ns, uint16_t pid,
+bool nvme_parse_pid(NvmeNamespace *ns, uint16_t pid,
                                   uint16_t *ph, uint16_t *rg)
 {
     *rg = nvme_pid2rg(ns, pid);
@@ -531,7 +531,7 @@ static inline int log_event(NvmeRuHandle *ruh, uint8_t event_type)
 
 }
 
-static bool nvme_update_ruh(FemuCtrl *n, NvmeNamespace *ns, uint16_t pid)
+ bool nvme_update_ruh(FemuCtrl *n, NvmeNamespace *ns, uint16_t pid)
 {
     NvmeEnduranceGroup *endgrp = ns->endgrp;
     NvmeRuHandle *ruh;
@@ -555,7 +555,7 @@ static bool nvme_update_ruh(FemuCtrl *n, NvmeNamespace *ns, uint16_t pid)
                                             nvme_fdp_evf_shifts[FDP_EVT_MEDIA_REALLOC] & 0xff);
 
     if (ru->ruamw) {
-                            //0                                         //32
+        //FDP_EVT_RU_NOT_FULLY_WRITTEN: 0                              //FDP_EVT_MEDIA_REALLOC:32
         if (log_event(ruh, FDP_EVT_RU_NOT_FULLY_WRITTEN) || log_event(ruh, FDP_EVT_MEDIA_REALLOC)) {
             e = nvme_fdp_alloc_event(n, &endgrp->fdp.host_events);
             
@@ -580,6 +580,9 @@ static bool nvme_update_ruh(FemuCtrl *n, NvmeNamespace *ns, uint16_t pid)
 
         /* log (eventual) GC overhead of prematurely swapping the RU */
         //mbmw stands for mb of media written, which contains both write from the host and device itself
+
+        //femu - call gc func here
+
         nvme_fdp_stat_inc(&endgrp->fdp.mbmw, nvme_l2b(ns, ru->ruamw));
     }
 
