@@ -335,7 +335,7 @@ uint16_t nvme_map_prp(FemuCtrl *n, NvmeSg *sg, uint64_t prp1,
     int ret;
 
     //trace_pci_nvme_map_prp(trans_len, len, prp1, prp2, num_prps);
-    femu_log("nvme_map_prp %d\n", num_prps);
+    femu_log("  dma.c: nvme_map_prp %d\n", num_prps);
     nvme_sg_init(n, sg, nvme_addr_is_dma(n, prp1));
 
     status = nvme_map_addr(n, sg, prp1, trans_len);
@@ -534,6 +534,7 @@ uint16_t dma_write_prp(FemuCtrl *n, uint8_t *ptr, uint32_t len, uint64_t prp1,
     uint16_t status = NVME_SUCCESS;
 
     //if (nvme_map_prp(&qsg, &iov, prp1, prp2, len, n))
+    femu_log("  dma_write_prpr ; ");
     if(nvme_map_prp(n, &sg, prp1,prp2, len))
     {
         return NVME_INVALID_FIELD | NVME_DNR;
@@ -565,6 +566,7 @@ uint16_t dma_read_prp(FemuCtrl *n, uint8_t *ptr, uint32_t len, uint64_t prp1,
     uint16_t status = NVME_SUCCESS;
 
     //if (nvme_map_prp(&qsg, &iov, prp1, prp2, len, n))
+    femu_log("  dma_read_prpr ; ");
     if(nvme_map_prp(n, &sg, prp1,prp2, len))
     {
         return NVME_INVALID_FIELD | NVME_DNR;

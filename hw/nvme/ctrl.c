@@ -7632,7 +7632,7 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
 {
     PCIDevice *pci = PCI_DEVICE(n);
     uint32_t qid;
-
+    femu_debug("qemu-nvme nvme_process_db hwaddr : %lx val : %d\n",addr, val);
     if (unlikely(addr & ((1 << 2) - 1))) {
         NVME_GUEST_ERR(pci_nvme_ub_db_wr_misaligned,
                        "doorbell write not 32-bit aligned,"
@@ -7668,6 +7668,7 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
              * fashion.
              */
             if (n->outstanding_aers) {
+                femu_err("      qemu-nvme nvme_process_db Completion Queue Head Doorbell regiter\n");
                 nvme_enqueue_event(n, NVME_AER_TYPE_ERROR,
                                    NVME_AER_INFO_ERR_INVALID_DB_REGISTER,
                                    NVME_LOG_ERROR_INFO);
@@ -7677,6 +7678,7 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
         }
 
         cq = n->cq[qid];
+        femu_debug("    qemu-nvme nvme_process_db DONE cq = n->cq[qid]; \n");
         if (unlikely(new_head >= cq->size)) {
             NVME_GUEST_ERR(pci_nvme_ub_db_wr_invalid_cqhead,
                            "completion queue doorbell write value"
@@ -7685,6 +7687,7 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
                            qid, new_head);
 
             if (n->outstanding_aers) {
+                femu_err("      qemu-nvme nvme_process_db Completion Queue Head Doorbell regiter\n");
                 nvme_enqueue_event(n, NVME_AER_TYPE_ERROR,
                                    NVME_AER_INFO_ERR_INVALID_DB_VALUE,
                                    NVME_LOG_ERROR_INFO);
@@ -7698,13 +7701,16 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
         start_sqs = nvme_cq_full(cq) ? 1 : 0;
         cq->head = new_head;
         if (!qid && n->dbbuf_enabled) {
+            femu_debug("        qemu-nvme nvme_process_db pci_dma_write(pci, cq->db_addr, &cq->head, sizeof(cq->head)  \n");
             pci_dma_write(pci, cq->db_addr, &cq->head, sizeof(cq->head));
         }
+        femu_debug("    qemu-nvme nvme_process_db start_sqs: READY to start sqs  \n");
         if (start_sqs) {
             NvmeSQueue *sq;
             QTAILQ_FOREACH(sq, &cq->sq_list, entry) {
                 qemu_bh_schedule(sq->bh);
             }
+            femu_debug("        qemu-nvme nvme_process_db DONE QTAILQ_FOREACH  qemu_bh_schedule(sq->bh); \n");
             qemu_bh_schedule(cq->bh);
         }
 
@@ -7738,6 +7744,7 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
         }
 
         sq = n->sq[qid];
+        femu_debug("    qemu-nvme nvme_process_db DONE sq = n->sq[qid]; \n");
         if (unlikely(new_tail >= sq->size)) {
             NVME_GUEST_ERR(pci_nvme_ub_db_wr_invalid_sqtail,
                            "submission queue doorbell write value"
@@ -7771,9 +7778,10 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
              * including ones that run on Linux, are not updating Admin Queues,
              * so we can't trust reading it for an appropriate sq tail.
              */
+            femu_debug("        qemu-nvme nvme_process_db pci_dma_write(pci, sq->db_addr, &sq->tail, sizeof(sq->tail));\n");
             pci_dma_write(pci, sq->db_addr, &sq->tail, sizeof(sq->tail));
         }
-
+        femu_debug("    qemu-nvme nvme_process_db DONE qemu_bh_schedule(sq->bh); \n");
         qemu_bh_schedule(sq->bh);
     }
 }
