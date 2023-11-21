@@ -234,7 +234,7 @@ typedef struct NvmeRuHandle {
     uint64_t ruamw;
 
     /* reclaim units indexed by reclaim group */
-    //NO, I will use it as a wptr for now - FIX ME AFTER MULTI-RG SUPPORT
+    // I will use it as a wptr for now - FIX ME AFTER MULTI-RG SUPPORT 
     NvmeReclaimUnit *rus;
 } NvmeRuHandle;
 
@@ -256,7 +256,8 @@ typedef struct NvmeEnduranceGroup {
         bool enabled;
 
         NvmeRuHandle *ruhs;
-        NvmeReclaimUnit *rus;                      //[rg][0-N]
+        NvmeReclaimUnit **rus;
+        //NvmeReclaimUnit **rus;                      //[rg][0-N]
 
     } fdp;
 } NvmeEnduranceGroup;
@@ -1876,7 +1877,7 @@ typedef struct FemuCtrl {
 
 
     //Nvme endurance group and subsystem
-    NvmeEnduranceGroup *endgrp
+    NvmeEnduranceGroup *endgrp;
     NvmeSubsystem   *subsys;
 
     uint32_t    conf_msix_qsize;
@@ -2160,7 +2161,7 @@ static inline NvmeSecCtrlEntry *nvme_sctrl_for_cntlid(FemuCtrl *n,
 #define MN_MAX_LEN (64)
 #define ID_MAX_LEN (4)
 
-//#define FEMU_DEBUG_NVME
+#define FEMU_DEBUG_NVME
 #ifdef FEMU_DEBUG_NVME
 #define femu_debug(fmt, ...) \
     do { printf("[FEMU] Dbg: " fmt, ## __VA_ARGS__); } while (0)

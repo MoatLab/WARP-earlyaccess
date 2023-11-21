@@ -7038,12 +7038,14 @@ static void nvme_process_sq(void *opaque)
     NvmeCmd cmd;
     NvmeRequest *req;
 
+
     if (n->dbbuf_enabled) {
         nvme_update_sq_tail(sq);
     }
 
     while (!(nvme_sq_empty(sq) || QTAILQ_EMPTY(&sq->req_list))) {
         addr = sq->dma_addr + sq->head * n->sqe_size;
+        femu_log("nvme_process_sq (addr 0x%lx)  \n",addr);
         if (nvme_addr_read(n, addr, (void *)&cmd, sizeof(cmd))) {
             trace_pci_nvme_err_addr_read(addr);
             trace_pci_nvme_err_cfs();
@@ -7639,9 +7641,10 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
                        " offset=0x%"PRIx64", ignoring", addr);
         return;
     }
-
+    femu_log("nvme_process_db (addr 0x%lx, data 0x%x)  \n", addr, val);
     if (((addr - 0x1000) >> 2) & 1) {
         /* Completion queue doorbell write */
+        femu_log("     Completion queue doorbell write (addr 0x%lx, data 0x%x)  \n", addr, val);
 
         uint16_t new_head = val & 0xffff;
         int start_sqs;
@@ -7717,6 +7720,7 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
         }
     } else {
         /* Submission queue doorbell write */
+        femu_log("    Submission queue doorbell write (addr 0x%lx, data 0x%x)  \n", addr, val);
 
         uint16_t new_tail = val & 0xffff;
         NvmeSQueue *sq;
@@ -7758,6 +7762,7 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
 
         sq->tail = new_tail;
         if (!qid && n->dbbuf_enabled) {
+            femu_log("      !qid && n->dbbuf_enabled (!qid (qid:%u)&& n->dbbuf_enabled %u)  \n", qid, n->dbbuf_enabled);
             /*
              * The spec states "the host shall also update the controller's
              * corresponding doorbell property to match the value of that entry
@@ -7773,8 +7778,7 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
              */
             pci_dma_write(pci, sq->db_addr, &sq->tail, sizeof(sq->tail));
         }
-
-        qemu_bh_schedule(sq->bh);
+        qemu_bh_schedule(sq->bh);       //nvme_sq
     }
 }
 
@@ -7794,6 +7798,7 @@ static void nvme_mmio_write(void *opaque, hwaddr addr, uint64_t data,
     if (addr < sizeof(n->bar)) {
         nvme_write_bar(n, addr, data, size);
     } else {
+        femu_log("nvme_process_db(addr 0x%lx, data 0x%lx)", addr,data);
         nvme_process_db(n, addr, data);
     }
 }

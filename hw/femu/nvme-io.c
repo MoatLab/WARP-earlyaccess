@@ -98,7 +98,7 @@ static void nvme_process_sq_io(void *opaque, int index_poller)
             nvme_addr_read(n, addr, (void *)&cmd, sizeof(cmd));
         }
         nvme_inc_sq_head(sq);
-
+        femu_debug("nvme_process_sq_io here \n");
         req = QTAILQ_FIRST(&sq->req_list);
         QTAILQ_REMOVE(&sq->req_list, req, entry);
         memset(&req->cqe, 0, sizeof(req->cqe));
@@ -243,10 +243,10 @@ void *nvme_poller(void *arg)
                 usleep(1000);
                 continue;
             }
-
             NvmeSQueue *sq = n->sq[index];
             NvmeCQueue *cq = n->cq[index];
             if (sq && sq->is_active && cq && cq->is_active) {
+                femu_err("nvme_poller : nvme_process_sq_io(sq, index %d\n);",index);
                 nvme_process_sq_io(sq, index);
             }
             nvme_process_cq_cpl(n, index);
@@ -263,6 +263,7 @@ void *nvme_poller(void *arg)
                 NvmeSQueue *sq = n->sq[i];
                 NvmeCQueue *cq = n->cq[i];
                 if (sq && sq->is_active && cq && cq->is_active) {
+                    femu_err("nvme_poller : nvme_process_sq_io(sq, index %d\n);",index);
                     nvme_process_sq_io(sq, index);
                 }
             }
@@ -604,15 +605,18 @@ static uint16_t nvme_io_mgmt_recv_ruhs(FemuCtrl *n, NvmeRequest *req,
     g_autofree uint8_t *buf = NULL;
 
     if (!n->subsys) {
+        femu_err(" nvme_io_mgmt_recv_ruhs : !n->subsys \n");
         return NVME_INVALID_FIELD | NVME_DNR;
     }
 
     //if (ns->params.nsid == 0 || ns->params.nsid == 0xffffffff) {
     if(ns->id == 0 || ns->id == 0xffffffff) {
+        femu_err(" ns->id == 0 || ns->id == 0xffffffff \n");
         return NVME_INVALID_NSID | NVME_DNR;
     }
 
     if (!n->subsys->endgrp.fdp.enabled) {
+        femu_err(" !n->subsys->endgrp.fdp.enabled \n");
         return NVME_FDP_DISABLED | NVME_DNR;
     }
 
@@ -643,6 +647,7 @@ static uint16_t nvme_io_mgmt_recv_ruhs(FemuCtrl *n, NvmeRequest *req,
             ruhsd->ruamw = cpu_to_le64(ruh->rus[rg].ruamw);
         }
     }
+    femu_log(" nvme_io_mgmt_recv_ruhs - nvme_c2h\n");
 
     return nvme_c2h(n, buf, trans_len, req);
 }
@@ -755,6 +760,7 @@ static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req)
         return nvme_io_mgmt_recv(n, req);
     default:
         if (n->ext_ops.io_cmd) {
+            femu_debug("nvme_io_cmd : n->ext_ops.io_cmd \n");
             return n->ext_ops.io_cmd(n, ns, cmd, req);
         }
 

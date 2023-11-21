@@ -600,25 +600,34 @@ static uint16_t nvme_identify(FemuCtrl *n, NvmeCmd *cmd)
     switch (cns) {
     case NVME_ID_CNS_NS:
     case NVME_ID_CNS_NS_PRESENT:
+        femu_debug("\t\t admin NVME_ID_CNS_NS\n");
         return nvme_identify_ns(n, cmd);
     case NVME_ID_CNS_CS_NS:
     case NVME_ID_CNS_CS_NS_PRESENT:
+        femu_debug("\t\t admin NVME_ID_CNS_CS_NS\n");
         return nvme_identify_ns_csi(n, cmd);
     case NVME_ID_CNS_CTRL:
+        femu_debug("\t\t admin NVME_ID_CNS_CTRL\n");
         return nvme_identify_ctrl(n, cmd);
     case NVME_ID_CNS_CS_CTRL:
+        femu_debug("\t\t admin NVME_ID_CNS_CS_CTRL\n");
         return nvme_identify_ctrl_csi(n, cmd);
     case NVME_ID_CNS_NS_ACTIVE_LIST:
     case NVME_ID_CNS_NS_PRESENT_LIST:
+        femu_debug("\t\t admin NVME_ID_CNS_NS_ACTIVE_LIST\n");
         return nvme_identify_nslist(n, cmd);
     case NVME_ID_CNS_CS_NS_ACTIVE_LIST:
     case NVME_ID_CNS_CS_NS_PRESENT_LIST:
+        femu_debug("\t\t admin NVME_ID_CNS_CS_NS_ACTIVE_LIST\n");
         return nvme_identify_nslist_csi(n, cmd);
     case NVME_ID_CNS_NS_DESCR_LIST:
+        femu_debug("\t\t admin NVME_ID_CNS_NS_DESCR_LIST\n");
         return nvme_identify_ns_descr_list(n, cmd);
     case NVME_ID_CNS_IO_COMMAND_SET:
+        femu_debug("\t\t admin NVME_ID_CNS_IO_COMMAND_SET\n");
         return nvme_identify_cmd_set(n, cmd);
     default:
+        femu_debug("\t\t admin NVME_INVALID_FIELD | NVME_DNR\n");
         return NVME_INVALID_FIELD | NVME_DNR;
     }
 }
@@ -1410,6 +1419,7 @@ static uint16_t nvme_admin_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
         return NVME_INVALID_OPCODE | NVME_DNR;
     default:
         if (n->ext_ops.admin_cmd) {
+            femu_debug("    admin default; n->ext_ops.admin_cmd \n");
             return n->ext_ops.admin_cmd(n, cmd);
         }
 

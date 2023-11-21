@@ -182,7 +182,6 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)
 
         endgrp->fdp.ruhs[ruhid].rus = g_new(NvmeReclaimUnit, endgrp->fdp.nrg);
     }
-
     endgrp->fdp.enabled = true;
     femu_log("fdp.enabled = true");
 

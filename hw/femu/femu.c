@@ -189,6 +189,7 @@ static void nvme_process_db_admin(FemuCtrl *n, hwaddr addr, int val)
         }
 
         sq->tail = new_val;
+        femu_debug("\t nvme_process_sq_admin (nvme_admin_cmd)\n");
         nvme_process_sq_admin(sq);
     }
 }
@@ -200,6 +201,7 @@ static void nvme_process_db_io(FemuCtrl *n, hwaddr addr, int val)
     NvmeSQueue *sq;
 
     if (n->dataplane_started) {
+        femu_debug("\t nvme_process_db_io (dataplane started, return)\n");
         return;
     }
 
@@ -247,16 +249,16 @@ static void nvme_process_db_io(FemuCtrl *n, hwaddr addr, int val)
 static void nvme_mmio_write(void *opaque, hwaddr addr, uint64_t data, unsigned size)
 {
     FemuCtrl *n = (FemuCtrl *)opaque;
-    femu_debug("nvme_mmio_write ");
+    //femu_debug("nvme_mmio_write ");
     if (addr < sizeof(n->bar)) {
-        femu_debug("- nvme_write_bar(addr 0x%lx, data 0x%lx, size 0x%x ) \n", addr, data, size);
+        //femu_debug("- nvme_write_bar(addr 0x%lx, data 0x%lx, size 0x%x ) \n", addr, data, size);
         nvme_write_bar(n, addr, data, size);
         
     } else if (addr >= 0x1000 && addr < 0x1008) {
-        femu_debug("- nvme_process_db_admin(addr 0x%lx, data 0x%lx) size 0x%x  \n", addr, data, size);
+        //femu_debug("- nvme_process_db_admin(addr 0x%lx, data 0x%lx) size 0x%x  \n", addr, data, size);
         nvme_process_db_admin(n, addr, data);
     } else {
-        femu_debug("- nvme_process_db_io(addr 0x%lx, data 0x%lx) size 0x%x  \n", addr, data, size);
+        //femu_debug("- nvme_process_db_io(addr 0x%lx, data 0x%lx) size 0x%x  \n", addr, data, size);
         nvme_process_db_io(n, addr, data);
     }
 }
@@ -666,6 +668,10 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
 
         endgrp->fdp.ruhs[ruhid].rus = g_new(NvmeReclaimUnit, endgrp->fdp.nrg);
     }
+    endgrp->fdp.rus = g_new(NvmeReclaimUnit *, endgrp->fdp.nrg);
+    for(int i=0 ; i < endgrp->fdp.nrg; i++){
+        endgrp->fdp.rus[i] = g_new(NvmeReclaimUnit, endgrp->fdp.runs);
+    }
 
     endgrp->fdp.enabled = true;
     femu_log("fdp.enabled = true");
@@ -1013,15 +1019,21 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     n->features.int_vector_config = g_malloc0(sizeof(*n->features.int_vector_config) * (n->nr_io_queues + 1));
 
     nvme_init_pci(n);
+    femu_log("\t nvme_init_subsys start \n");
     if(!n->subsys)
         nvme_init_subsys(n);
+
     nvme_init_ctrl(n);
+
     nvme_init_namespaces(n, errp);
+
     nvme_register_extensions(n);
 
     if (n->ext_ops.init) {
         n->ext_ops.init(n, errp);
     }
+    femu_log("\t femu_realize fin \n");
+
 }
 
 static void nvme_destroy_poller(FemuCtrl *n)

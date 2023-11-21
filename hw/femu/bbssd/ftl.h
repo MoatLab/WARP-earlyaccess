@@ -7,7 +7,6 @@
 #define INVALID_LPN     (~(0ULL))
 #define UNMAPPED_PPA    (~(0ULL))
 
-typedef struct rg_mgmt rg_mgmt;
 typedef struct FemuReclaimGroup FemuReclaimGroup;
 typedef struct FemuRuHandle FemuRuHandle;
 typedef struct FemuReclaimUnit FemuReclaimUnit; 
@@ -160,6 +159,9 @@ struct ssdparams {
     int tt_pls;       /* total # of planes in the SSD */
 
     int tt_luns;      /* total # of LUNs in the SSD */
+
+
+    int lines_per_ru;
 };
 
 typedef struct line {
@@ -182,6 +184,7 @@ struct write_pointer {
 };
 
 struct line_mgmt {
+    //Superblock management
     struct line *lines;
     /* free line list, we only need to maintain a list of blk numbers */
     QTAILQ_HEAD(free_line_list, line) free_line_list;
@@ -200,44 +203,89 @@ struct nand_cmd {
     int64_t stime; /* Coperd: request arrival time */
 };
 
-typedef struct Superblock {
-    // Inho: Here, Reclaim Unit can have multiple superblocks, not vice versa. This should be fixed.
-    // Since NvmeReclaimUnit < is resides in nvme.h and superblock is in ftl.h
-    // How can I solve this? --> define FemuReclaimUnit in here and wrap NvmeReclaimUnit
-    NvmeReclaimUnit *ru;                
-    NvmeRuHandle *ruh;    
-    uint32_t ruhid;
-    struct line_mgmt *lm;
-    struct nand_block *blocks;
-}Superblock;
+    #ifdef SUPERBLOCK
+    typedef struct Superblock {
+        // Inho: Here, Reclaim Unit can have multiple superblocks, not vice versa. This should be fixed.
+        // Since NvmeReclaimUnit < is resides in nvme.h and superblock is in ftl.h
+        // How can I solve this? --> define FemuReclaimUnit in here and wrap NvmeReclaimUnit
+        NvmeReclaimUnit *ru;                
+        NvmeRuHandle *ruh;    
+        struct line *line;
+        uint32_t ruhid;
+        struct write_pointer *wptr;
+        QTAILQ_ENTRY(Superblock) entry; /* in either {free,victim,full} list */
+    }Superblock;
+
+    typedef struct super_mgmt{
+        Superblock *superblocks;
+
+        QTAILQ_HEAD(free_super_list, Superblock) free_super_list;
+        pqueue_t *victim_superblock_pq;
+        //QTAILQ_HEAD(victim_line_list, line) victim_line_list;
+        QTAILQ_HEAD(full_super_list, Superblock) full_super_list;
+
+        int tt_supers;          //tt:total
+        int free_super_cnt;
+        int victim_super_cnt;
+        int full_super_cnt;
+    }super_mgmt;
+    #endif
 
 typedef struct rg_mgmt{
     FemuReclaimGroup * rgs;
 }rg_mgmt;
 
+typedef struct ru_mgmt{
+    QTAILQ_HEAD(free_ru_list, FemuReclaimUnit) free_ru_list;
+    //pqueue_t *victim_ru_pq_type_init;    
+    //pqueue_t *victim_ru_pq_type_permnt;
+    pqueue_t *victim_ru_pq;
+
+    //QTAILQ_HEAD(victim_line_list, line) victim_line_list;
+    QTAILQ_HEAD(full_ru_list, FemuReclaimUnit) full_ru_list;
+    int tt_rus;
+    int free_ru_cnt;
+    int victim_ru_cnt_type_init;
+    int victim_ru_cnt_type_permnt;
+    int victim_ru_cnt;
+    int full_ru_cnt;
+}ru_mgmt;
+
 typedef struct FemuReclaimGroup{
 
-    FemuRuHandle *ruhs;
+    //FemuRuHandle *ruhs;
     FemuReclaimUnit *rus;
-    struct rg_mgmt *rgmt;
+    uint64_t tt_runs;
+    struct ru_mgmt *ru_mgmt;
+
 
 }FemuReclaimGroup;
 
 typedef struct FemuReclaimUnit{
+    uint16_t rgidx;
     NvmeReclaimUnit *ru;                
-    NvmeRuHandle *ruh;    
-    struct write_pointer *wptr;
+    FemuRuHandle *ruh;    
+    //struct write_pointer *wptr;
+    struct write_pointer *ssd_wptr;
+    struct line **lines;
+    QTAILQ_ENTRY(FemuReclaimUnit) entry; 
+    int vpc;
+    int pri;
+    int pos;
+    int n_lines;
+    int next_line_index;
 
 }FemuReclaimUnit;
 
 typedef struct FemuRuHandle{
     int ruh_type;
-    NvmeRuHandle *ruh;              //1. pointer to original reclaim unit handle
-    FemuReclaimUnit *rus;           //2. List that this ruh have. I don't think this is necessary. 
-    FemuReclaimUnit *curr_ru;       //3. Current wptr (RU).
-    pqueue_t *victim_line_pq;       //
+    int ruhid;
     int n_ru;
     int ru_in_use_cnt;
+    NvmeRuHandle *ruh;              //1. pointer to original reclaim unit handle
+    FemuReclaimUnit **rus;           //2. List that this ruh have. I don't think this is necessary. 
+    FemuReclaimUnit *curr_ru;       //3. Current wptr (RU).
+
 }FemuRuHandle;
 
 struct ssd {
@@ -255,16 +303,18 @@ struct ssd {
     bool *dataplane_started_ptr;
     QemuThread ftl_thread;
 
-    /*FEMU backend internal units for the FDP and Stream SSD*/
-    Superblock        *total_superblocks;
-    uint64_t          n_supers;
+    /* FEMU backend internal units for the FDP and Stream SSD*/
+    FemuReclaimGroup *rg;
+    FemuReclaimUnit **rus;
+    FemuRuHandle *ruhs;
+    
 };
 
 void ssd_init(FemuCtrl *n);
 
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \
-    do { printf("[FEMU] FTL-Dbg: " fmt, ## __VA_ARGS__); } while (0)
+    do { fprintf(stderr, "[FEMU] FTL-Dbg: " fmt, ## __VA_ARGS__); } while (0)
 #else
 #define ftl_debug(fmt, ...) \
     do { } while (0)
@@ -276,6 +326,8 @@ void ssd_init(FemuCtrl *n);
 #define ftl_log(fmt, ...) \
     do { printf("[FEMU] FTL-Log: " fmt, ## __VA_ARGS__); } while (0)
 
+#define fdp_log(fmt, ...) \
+    do { printf("[FEMU] FTL-Log: " fmt, ## __VA_ARGS__); } while (0)
 
 /* FEMU assert() */
 #ifdef FEMU_DEBUG_FTL
