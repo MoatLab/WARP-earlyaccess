@@ -64,7 +64,7 @@ typedef struct NvmeReclaimUnit {
 } NvmeReclaimUnit;
 
 typedef struct NvmeRuHandle {
-    uint8_t  ruht;
+    uint8_t  ruht;          //Inho : No such code refering this
     uint8_t  ruha;
     uint64_t event_filter;
     uint8_t  lbafi;

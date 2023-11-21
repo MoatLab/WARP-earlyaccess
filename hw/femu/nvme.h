@@ -82,6 +82,11 @@ enum NvmeSglDescriptorType {
     NVME_SGL_DESCR_TYPE_VENDOR_SPECIFIC     = 0xf,
 };
 
+enum NvmeDirectiveTypes {
+    NVME_DIRECTIVE_IDENTIFY       = 0x0,
+    NVME_DIRECTIVE_DATA_PLACEMENT = 0x2,
+};
+
 typedef struct QEMU_PACKED NvmeFdpConfsHdr {
     uint16_t num_confs;
     uint8_t  version;
@@ -229,6 +234,7 @@ typedef struct NvmeRuHandle {
     uint64_t ruamw;
 
     /* reclaim units indexed by reclaim group */
+    //NO, I will use it as a wptr for now - FIX ME AFTER MULTI-RG SUPPORT
     NvmeReclaimUnit *rus;
 } NvmeRuHandle;
 
@@ -240,7 +246,7 @@ typedef struct NvmeEnduranceGroup {
 
         uint16_t nruh;
         uint16_t nrg;
-        uint8_t  rgif;
+        uint8_t  rgif;              
         uint64_t runs;
 
         uint64_t hbmw;
@@ -250,6 +256,8 @@ typedef struct NvmeEnduranceGroup {
         bool enabled;
 
         NvmeRuHandle *ruhs;
+        NvmeReclaimUnit *rus;                      //[rg][0-N]
+
     } fdp;
 } NvmeEnduranceGroup;
 
@@ -790,19 +798,22 @@ typedef struct NvmeIdentity {
     uint32_t    rsvd12[4];
 } NvmeIdentify;
 
-typedef struct NvmeRwCmd {
+typedef struct QEMU_PACKED NvmeRwCmd {
     uint8_t     opcode;
     uint8_t     flags;
     uint16_t    cid;
     uint32_t    nsid;
-    uint64_t    rsvd2;
+    uint32_t    cdw2;
+    uint32_t    cdw3;
     uint64_t    mptr;
     uint64_t    prp1;
     uint64_t    prp2;
     uint64_t    slba;
     uint16_t    nlb;
     uint16_t    control;
-    uint32_t    dsmgmt;
+    uint8_t     dsmgmt;
+    uint8_t     rsvd;
+    uint16_t    dspec;
     uint32_t    reftag;
     uint16_t    apptag;
     uint16_t    appmask;
@@ -1863,7 +1874,11 @@ typedef struct FemuCtrl {
     NvmeErrorLog    *elpes;
     NvmeRequest     **aer_reqs;
 
+
+    //Nvme endurance group and subsystem
+    NvmeEnduranceGroup *endgrp
     NvmeSubsystem   *subsys;
+
     uint32_t    conf_msix_qsize;
     uint32_t    conf_ioqpairs;
     uint16_t        cntlid;
@@ -2070,7 +2085,12 @@ uint16_t nvme_map_sgl(FemuCtrl *n, NvmeSg *sg, NvmeSglDescriptor sgl,
                              size_t len, NvmeCmd *cmd);
 /* NVMe I/O */
 uint16_t nvme_rw(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, NvmeRequest *req);
+uint16_t nvme_pid2ph(NvmeNamespace *ns, uint16_t pid);
+uint16_t nvme_pid2rg(NvmeNamespace *ns, uint16_t pid);
+bool nvme_parse_pid(NvmeNamespace *ns, uint16_t pid, uint16_t *ph, uint16_t *rg);
+bool nvme_update_ruh(FemuCtrl *n, NvmeNamespace *ns, uint16_t pid);
 
+void nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t nlb);
 int nvme_register_ocssd12(FemuCtrl *n);
 int nvme_register_ocssd20(FemuCtrl *n);
 int nvme_register_nossd(FemuCtrl *n);

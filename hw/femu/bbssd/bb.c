@@ -81,7 +81,20 @@ static uint16_t bb_io_cmd(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
 {
     switch (cmd->opcode) {
     case NVME_CMD_READ:
+        return bb_nvme_rw(n, ns, cmd, req);
     case NVME_CMD_WRITE:
+        if(ns->endgrp && ns->endgrp->fdp.enabled) {
+            femu_debug("bb_io_cmd fdp write here \n");
+            /** 
+             * 
+             * If more ns is in the device, then "nvme_check_bounds()" 
+             * have to be called before nvme_do_write_fdp
+             * to check whether the slba and nlb is valid for the namespace 
+             * that gonna write
+             * 
+             * */
+            nvme_do_write_fdp(n, req, req->slba, req->nlb);
+        }
         return bb_nvme_rw(n, ns, cmd, req);
     default:
         return NVME_INVALID_OPCODE | NVME_DNR;

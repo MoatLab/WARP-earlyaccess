@@ -7,6 +7,11 @@
 #define INVALID_LPN     (~(0ULL))
 #define UNMAPPED_PPA    (~(0ULL))
 
+typedef struct rg_mgmt rg_mgmt;
+typedef struct FemuReclaimGroup FemuReclaimGroup;
+typedef struct FemuRuHandle FemuRuHandle;
+typedef struct FemuReclaimUnit FemuReclaimUnit; 
+
 enum {
     NAND_READ =  0,
     NAND_WRITE = 1,
@@ -56,6 +61,7 @@ enum {
 struct ppa {
     union {
         struct {
+            //uint64_t spblk : ? 
             uint64_t blk : BLK_BITS;
             uint64_t pg  : PG_BITS;
             uint64_t sec : SEC_BITS;
@@ -194,6 +200,46 @@ struct nand_cmd {
     int64_t stime; /* Coperd: request arrival time */
 };
 
+typedef struct Superblock {
+    // Inho: Here, Reclaim Unit can have multiple superblocks, not vice versa. This should be fixed.
+    // Since NvmeReclaimUnit < is resides in nvme.h and superblock is in ftl.h
+    // How can I solve this? --> define FemuReclaimUnit in here and wrap NvmeReclaimUnit
+    NvmeReclaimUnit *ru;                
+    NvmeRuHandle *ruh;    
+    uint32_t ruhid;
+    struct line_mgmt *lm;
+    struct nand_block *blocks;
+}Superblock;
+
+typedef struct rg_mgmt{
+    FemuReclaimGroup * rgs;
+}rg_mgmt;
+
+typedef struct FemuReclaimGroup{
+
+    FemuRuHandle *ruhs;
+    FemuReclaimUnit *rus;
+    struct rg_mgmt *rgmt;
+
+}FemuReclaimGroup;
+
+typedef struct FemuReclaimUnit{
+    NvmeReclaimUnit *ru;                
+    NvmeRuHandle *ruh;    
+    struct write_pointer *wptr;
+
+}FemuReclaimUnit;
+
+typedef struct FemuRuHandle{
+    int ruh_type;
+    NvmeRuHandle *ruh;              //1. pointer to original reclaim unit handle
+    FemuReclaimUnit *rus;           //2. List that this ruh have. I don't think this is necessary. 
+    FemuReclaimUnit *curr_ru;       //3. Current wptr (RU).
+    pqueue_t *victim_line_pq;       //
+    int n_ru;
+    int ru_in_use_cnt;
+}FemuRuHandle;
+
 struct ssd {
     char *ssdname;
     struct ssdparams sp;
@@ -208,6 +254,10 @@ struct ssd {
     struct rte_ring **to_poller;
     bool *dataplane_started_ptr;
     QemuThread ftl_thread;
+
+    /*FEMU backend internal units for the FDP and Stream SSD*/
+    Superblock        *total_superblocks;
+    uint64_t          n_supers;
 };
 
 void ssd_init(FemuCtrl *n);

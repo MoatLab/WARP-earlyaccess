@@ -633,6 +633,7 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
     }
 
     endgrp->fdp.runs = subsys->params.fdp.runs;
+    femu_log(" endgrp->fdp.runs = %lu\n", endgrp->fdp.runs);
 
     if (!subsys->params.fdp.nrg) {
         error_setg(errp, "fdp.nrg must be non-zero");
@@ -640,6 +641,7 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
     }
 
     endgrp->fdp.nrg = subsys->params.fdp.nrg;
+    femu_log(" endgrp->fdp.nrg = %u\n", endgrp->fdp.nrg);
 
     if (!subsys->params.fdp.nruh) {
         error_setg(errp, "fdp.nruh must be non-zero");
@@ -647,6 +649,7 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
     }
 
     endgrp->fdp.nruh = subsys->params.fdp.nruh;
+    femu_log(" endgrp->fdp.nruh = %u\n", endgrp->fdp.nruh);
 
     if (!nvme_calc_rgif(endgrp->fdp.nruh, endgrp->fdp.nrg, &endgrp->fdp.rgif)) {
         error_setg(errp,
