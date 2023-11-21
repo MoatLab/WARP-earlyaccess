@@ -702,16 +702,20 @@ static uint16_t nvme_set_feature(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
     uint32_t nsid = le32_to_cpu(cmd->nsid);
     uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
     uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
-
+    femu_debug("nvme_set_feature      ");
     switch (dw10) {
     case NVME_ARBITRATION:
+        femu_debug("NVME_ARBITRATION      \n");
         cqe->n.result = cpu_to_le32(n->features.arbitration);
         n->features.arbitration = dw11;
         break;
     case NVME_POWER_MANAGEMENT:
+        femu_debug("NVME_POWER_MANAGEMENT      \n");
         n->features.power_mgmt = dw11;
         break;
     case NVME_LBA_RANGE_TYPE:
+        femu_debug("NVME_LBA_RANGE_TYPE      ");
+
         if (nsid == 0 || nsid > n->num_namespaces) {
             return NVME_INVALID_NSID | NVME_DNR;
         }
@@ -720,11 +724,13 @@ static uint16_t nvme_set_feature(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
                 MIN(sizeof(*rt), (dw11 & 0x3f) * sizeof(*rt)),
                 prp1, prp2);
     case NVME_NUMBER_OF_QUEUES:
+        femu_debug("NVME_NUMBER_OF_QUEUES      \n");
         /* Coperd: nr_io_queues is 0-based */
         cqe->n.result = cpu_to_le32((n->nr_io_queues - 1) |
                 ((n->nr_io_queues - 1) << 16));
         break;
     case NVME_TEMPERATURE_THRESHOLD:
+        femu_debug("NVME_TEMPERATURE_THRESHOLD      \n");
         n->features.temp_thresh = dw11;
         if (n->features.temp_thresh <= n->temperature && !n->temp_warn_issued) {
             n->temp_warn_issued = 1;
@@ -734,27 +740,34 @@ static uint16_t nvme_set_feature(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
         }
         break;
     case NVME_ERROR_RECOVERY:
+        femu_debug("NVME_ERROR_RECOVERY      \n");
         n->features.err_rec = dw11;
         break;
     case NVME_VOLATILE_WRITE_CACHE:
+        femu_debug("NVME_VOLATILE_WRITE_CACHE      \n");
         n->features.volatile_wc = dw11;
         break;
     case NVME_INTERRUPT_COALESCING:
+        femu_debug("NVME_INTERRUPT_COALESCING      \n");
         n->features.int_coalescing = dw11;
         break;
     case NVME_INTERRUPT_VECTOR_CONF:
+        femu_debug("NVME_INTERRUPT_VECTOR_CONF      \n");
         if ((dw11 & 0xffff) > n->nr_io_queues) {
             return NVME_INVALID_FIELD | NVME_DNR;
         }
         n->features.int_vector_config[dw11 & 0xffff] = dw11 & 0x1ffff;
         break;
     case NVME_WRITE_ATOMICITY:
+        femu_debug("NVME_WRITE_ATOMICITY      \n");
         n->features.write_atomicity = dw11;
         break;
     case NVME_ASYNCHRONOUS_EVENT_CONF:
+        femu_debug("NVME_ASYNCHRONOUS_EVENT_CONF      \n");
         n->features.async_config = dw11;
         break;
     case NVME_SOFTWARE_PROGRESS_MARKER:
+        femu_debug("NVME_SOFTWARE_PROGRESS_MARKER      \n");
         n->features.sw_prog_marker = dw11;
         break;
     default:
@@ -1461,6 +1474,7 @@ void nvme_process_sq_admin(void *opaque)
         } else {
             addr = nvme_discontig(cq->prp_list, cq->tail, n->page_size, n->cqe_size);
         }
+        femu_debug("        qemu-nvme nvme_process_sq_admin nvme_addr_write(n, addr, (void *)&cqe, sizeof(cqe));  \n");
         nvme_addr_write(n, addr, (void *)&cqe, sizeof(cqe));
         nvme_inc_cq_tail(cq);
         nvme_isr_notify_admin(cq);

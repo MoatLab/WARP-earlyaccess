@@ -603,37 +603,55 @@ static uint16_t nvme_io_mgmt_recv_ruhs(FemuCtrl *n, NvmeRequest *req,
     uint16_t rg, ph, *ruhid;
     size_t trans_len;
     g_autofree uint8_t *buf = NULL;
+    femu_debug("        femu-nvme nvme_io_mgmt_recv_ruhs    \n");
 
     if (!n->subsys) {
-        femu_err(" nvme_io_mgmt_recv_ruhs : !n->subsys \n");
+        femu_debug("  REPORT : NVME_INVALID_FIELD | NVME_DNR;   (!n->subsys) n->subsys is NULL  \n");
         return NVME_INVALID_FIELD | NVME_DNR;
     }
 
     //if (ns->params.nsid == 0 || ns->params.nsid == 0xffffffff) {
     if(ns->id == 0 || ns->id == 0xffffffff) {
-        femu_err(" ns->id == 0 || ns->id == 0xffffffff \n");
+        femu_debug("  REPORT : NVME_INVALID_FIELD | NVME_DNR;   ns->id == 0 || ns->id == 0xffffffff  \n");
         return NVME_INVALID_NSID | NVME_DNR;
     }
 
     if (!n->subsys->endgrp.fdp.enabled) {
-        femu_err(" !n->subsys->endgrp.fdp.enabled \n");
+        femu_debug("  REPORT : NVME_INVALID_FIELD | NVME_DNR;  (!n->subsys->endgrp.fdp.enabled) n->subsys->endgrp.fdp.enabled FALSE \n");
         return NVME_FDP_DISABLED | NVME_DNR;
     }
-
+    if (!ns->endgrp) {
+        femu_debug("  REPORT : NVME_INVALID_FIELD | NVME_DNR;   (!ns->endgrp) ns->endgrp is NULL  \n");
+        return NVME_INVALID_FIELD | NVME_DNR;
+    }
+    
+    femu_debug("\t\t\t  endgrp = ns->endgrp(enabled : %d) \n", ns->endgrp->fdp.enabled);
     endgrp = ns->endgrp;
+    femu_debug("\t\t\t  ns->fdp.nphs %d ",ns->fdp.nphs);            ///0 ???
+    femu_debug("\t\t\t  endgrp->fdp.nrg %d; \n",endgrp->fdp.nrg);        
 
-    nruhsd = ns->fdp.nphs * endgrp->fdp.nrg;
+    nruhsd = ns->fdp.nphs * endgrp->fdp.nrg;                          //HERE. but still dn't understand
+    femu_debug("\t\t\t      1 nruhsd = ns->fdp.nphs * endgrp->fdp.nrg; fin\n");
     trans_len = sizeof(NvmeRuhStatus) + nruhsd * sizeof(NvmeRuhStatusDescr);
+    femu_debug("\t\t\t      2 trans_len = sizeof(NvmeRuhStatus) + nruhsd * sizeof(NvmeRuhStatusDescr); fin\n");
     buf = g_malloc(trans_len);
+    femu_debug("\t\t\t      3  buf = g_malloc(trans_len); fin\n");
 
     trans_len = MIN(trans_len, len);
+    femu_debug("\t\t\t      4  trans_len = MIN(trans_len, len); fin\n");
 
     hdr = (NvmeRuhStatus *)buf;
     ruhsd = (NvmeRuhStatusDescr *)(buf + sizeof(NvmeRuhStatus));
-
+    femu_debug("\t\t\thdr->nruhsd = cpu_to_le16(nruhsd); hdr->nruhsd : %u\n",cpu_to_le16(nruhsd));
     hdr->nruhsd = cpu_to_le16(nruhsd);
+    femu_debug("\t\t\t hdr->nruhsd fin\n" );
 
+    if(!ns->fdp.phs){
+        femu_err("\t\t\t\t (!ns->fdp.phs) ns->fdp.phs is NULL");
+    }
+    femu_debug("\t\t\t  ruhid = ns->fdp.phs; ");
     ruhid = ns->fdp.phs;
+    femu_debug("\t\t\t start for (ph = 0; ph < ns->fdp.nphs; ph++, ruhid++). ruhid %u \n",*ruhid);
 
     for (ph = 0; ph < ns->fdp.nphs; ph++, ruhid++) {
         NvmeRuHandle *ruh = &endgrp->fdp.ruhs[*ruhid];
@@ -647,7 +665,7 @@ static uint16_t nvme_io_mgmt_recv_ruhs(FemuCtrl *n, NvmeRequest *req,
             ruhsd->ruamw = cpu_to_le64(ruh->rus[rg].ruamw);
         }
     }
-    femu_log(" nvme_io_mgmt_recv_ruhs - nvme_c2h\n");
+    femu_debug("\t\t\tfin for (ph = 0; ph < ns->fdp.nphs; ph++, ruhid++). \n nvme_c2h(n, buf, trans_len, req);\n");
 
     return nvme_c2h(n, buf, trans_len, req);
 }
@@ -662,10 +680,13 @@ static uint16_t nvme_io_mgmt_recv(FemuCtrl *n, NvmeRequest *req)
 
     switch (mo) {
     case NVME_IOMR_MO_NOP:
+        femu_debug("    femu-nvme nvme_io_mgmt_recv NVME_IOMR_MO_NOP return 0;\n");
         return 0;
     case NVME_IOMR_MO_RUH_STATUS:
+        femu_debug("    femu-nvme nvme_io_mgmt_recv NVME_IOMR_MO_RUH_STATUS nvme_io_mgmt_recv_ruhs(n, req, len);\n");
         return nvme_io_mgmt_recv_ruhs(n, req, len);
     default:
+        femu_debug("    femu-nvme nvme_io_mgmt_recv NVME_INVALID_FIELD | NVME_DNR;\n");
         return NVME_INVALID_FIELD | NVME_DNR;
     };
 }
@@ -731,32 +752,40 @@ static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req)
     switch (cmd->opcode) {
     case NVME_CMD_FLUSH:
         if (!n->id_ctrl.vwc || !n->features.volatile_wc) {
+            femu_debug(" nvme_io_cmd NVME_CMD_FLUSH NVME_SUCCESS\n");
             return NVME_SUCCESS;
         }
+        femu_debug(" nvme_io_cmd NVME_CMD_FLUSH nvme_flush(n, ns, cmd, req);\n");
         return nvme_flush(n, ns, cmd, req);
     case NVME_CMD_DSM:
         if (NVME_ONCS_DSM & n->oncs) {
+            femu_debug(" nvme_io_cmd NVME_CMD_DSM\n");
             return nvme_dsm(n, ns, cmd, req);
         }
         return NVME_INVALID_OPCODE | NVME_DNR;
     case NVME_CMD_COMPARE:
+        femu_debug(" nvme_io_cmd NVME_CMD_COMPARE\n");
         if (NVME_ONCS_COMPARE & n->oncs) {
             return nvme_compare(n, ns, cmd, req);
         }
         return NVME_INVALID_OPCODE | NVME_DNR;
     case NVME_CMD_WRITE_ZEROES:
+        femu_debug(" nvme_io_cmd NVME_CMD_WRITE_ZEROES\n");
         if (NVME_ONCS_WRITE_ZEROS & n->oncs) {
             return nvme_write_zeros(n, ns, cmd, req);
         }
         return NVME_INVALID_OPCODE | NVME_DNR;
     case NVME_CMD_WRITE_UNCOR:
+        femu_debug(" nvme_io_cmd NVME_CMD_WRITE_UNCOR\n");
         if (NVME_ONCS_WRITE_UNCORR & n->oncs) {
             return nvme_write_uncor(n, ns, cmd, req);
         }
         return NVME_INVALID_OPCODE | NVME_DNR;
     case NVME_CMD_IO_MGMT_SEND:
+        femu_debug(" nvme_io_cmd NVME_CMD_IO_MGMT_SEND\n");
         return nvme_io_mgmt_send(n, req);
     case NVME_CMD_IO_MGMT_RECV:
+        femu_debug(" nvme_io_cmd NVME_CMD_IO_MGMT_RECV\n");
         return nvme_io_mgmt_recv(n, req);
     default:
         if (n->ext_ops.io_cmd) {

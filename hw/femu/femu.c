@@ -169,6 +169,7 @@ static void nvme_process_db_admin(FemuCtrl *n, hwaddr addr, int val)
         }
 
         cq = n->cq[qid];
+        femu_debug("    femu-nvme nvme_process_db DONE cq = n->cq[qid]; \n");
         if (new_val >= cq->size) {
             return;
         }
@@ -251,14 +252,14 @@ static void nvme_mmio_write(void *opaque, hwaddr addr, uint64_t data, unsigned s
     FemuCtrl *n = (FemuCtrl *)opaque;
     //femu_debug("nvme_mmio_write ");
     if (addr < sizeof(n->bar)) {
-        //femu_debug("- nvme_write_bar(addr 0x%lx, data 0x%lx, size 0x%x ) \n", addr, data, size);
+        femu_debug(" femu-nvme nvme_write_bar(addr 0x%lx, data 0x%lx, size 0x%x ) \n", addr, data, size);
         nvme_write_bar(n, addr, data, size);
         
     } else if (addr >= 0x1000 && addr < 0x1008) {
-        //femu_debug("- nvme_process_db_admin(addr 0x%lx, data 0x%lx) size 0x%x  \n", addr, data, size);
+        femu_debug(" femu-nvme nvme_process_db hwaddr : %lx val %lu size 0x%x -admin \n", addr, data, size);
         nvme_process_db_admin(n, addr, data);
     } else {
-        //femu_debug("- nvme_process_db_io(addr 0x%lx, data 0x%lx) size 0x%x  \n", addr, data, size);
+        femu_debug(" femu-nvme nvme_process_db hwaddr : %lx val %lu size 0x%x -io \n", addr, data, size);
         nvme_process_db_io(n, addr, data);
     }
 }
@@ -487,7 +488,6 @@ static void nvme_attach_ns(FemuCtrl *n, NvmeNamespace *ns)
 {
     //uint32_t nsid = ns->params.nsid;
     //assert(nsid && nsid <= NVME_MAX_NAMESPACES);
-
     //n->namespaces[nsid] = ns;
     n->namespaces = ns; 
     ns->attached++;
@@ -738,6 +738,143 @@ static void nvme_ns_init_identify(FemuCtrl *n, NvmeIdNs *id_ns)
     }
 }
 
+static NvmeRuHandle *nvme_find_ruh_by_attr(NvmeEnduranceGroup *endgrp,
+                                           uint8_t ruha, uint16_t *ruhid)
+{
+    for (uint16_t i = 0; i < endgrp->fdp.nruh; i++) {
+        NvmeRuHandle *ruh = &endgrp->fdp.ruhs[i];
+
+        if (ruh->ruha == ruha) {
+            *ruhid = i;
+            return ruh;
+        }
+    }
+
+    return NULL;
+}
+static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
+{
+    NvmeEnduranceGroup *endgrp = ns->endgrp;
+    NvmeRuHandle *ruh;
+    uint8_t lbafi = NVME_ID_NS_FLBAS_INDEX(ns->id_ns.flbas);
+    g_autofree unsigned int *ruhids = NULL;
+    unsigned int *ruhid;
+    char *r, *p, *token;
+    uint16_t *ph;
+    
+    femu_log("  nvme_ns_init_fdp here \n");
+    
+    if (!ns->params.fdp.ruhs) {
+        femu_err("      (!ns->params.fdp.ruhs) ns->params.fdp.ruhs was NULL \n");
+        ns->fdp.nphs = 1;
+        ph = ns->fdp.phs = g_new(uint16_t, 1);
+
+        ruh = nvme_find_ruh_by_attr(endgrp, NVME_RUHA_CTRL, ph);
+        if (!ruh) {
+            ruh = nvme_find_ruh_by_attr(endgrp, NVME_RUHA_UNUSED, ph);
+            if (!ruh) {
+                error_setg(errp, "no unused reclaim unit handles left");
+                return false;
+            }
+
+            ruh->ruha = NVME_RUHA_CTRL;
+            ruh->lbafi = lbafi;
+            //ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.ds;
+            ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.lbads;
+
+            for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
+                ruh->rus[rg].ruamw = ruh->ruamw;
+            }
+        } else if (ruh->lbafi != lbafi) {
+            error_setg(errp, "lba format index of controller assigned "
+                       "reclaim unit handle does not match namespace lba "
+                       "format index");
+            return false;
+        }
+
+        return true;
+    }
+
+    ruhid = ruhids = g_new0(unsigned int, endgrp->fdp.nruh);
+    femu_log("      ruhid (char *) initialized as char[%d] \n", endgrp->fdp.nruh);
+
+    r = p = strdup(ns->params.fdp.ruhs);
+
+    /* parse the placement handle identifiers */
+    while ((token = qemu_strsep(&p, ";")) != NULL) {
+        ns->fdp.nphs += 1;
+        if (ns->fdp.nphs > NVME_FDP_MAXPIDS ||
+            ns->fdp.nphs == endgrp->fdp.nruh) {
+            error_setg(errp, "too many placement handles");
+            free(r);
+            return false;
+        }
+
+        if (qemu_strtoui(token, NULL, 0, ruhid++) < 0) {
+            error_setg(errp, "cannot parse reclaim unit handle identifier");
+            free(r);
+            return false;
+        }
+    }
+
+    free(r);
+
+    ph = ns->fdp.phs = g_new(uint16_t, ns->fdp.nphs);
+
+    ruhid = ruhids;
+
+    /* verify the identifiers */
+    for (unsigned int i = 0; i < ns->fdp.nphs; i++, ruhid++, ph++) {
+        if (*ruhid >= endgrp->fdp.nruh) {
+            femu_err("      (*ruhid >= endgrp->fdp.nruh) invalid reclaim unit handle identifier \n");
+            error_setg(errp, "invalid reclaim unit handle identifier");
+            return false;
+        }
+
+        ruh = &endgrp->fdp.ruhs[*ruhid];
+
+        switch (ruh->ruha) {
+        case NVME_RUHA_UNUSED:
+            femu_log("      NVME_RUHA_UNUSED. set as ruh->ruha = NVME_RUHA_HOST;\n");
+            ruh->ruha = NVME_RUHA_HOST;
+            ruh->lbafi = lbafi;
+            //ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.ds;
+            ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.lbads;
+
+            for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
+                ruh->rus[rg].ruamw = ruh->ruamw;
+            }
+
+            break;
+
+        case NVME_RUHA_HOST:
+            if (ruh->lbafi != lbafi) {
+                femu_err("      (ruh->lbafi != lbafi) NVME_RUHA_HOST  reclaim unit handle does not match namespace \n");
+
+                error_setg(errp, "lba format index of host assigned"
+                           "reclaim unit handle does not match namespace "
+                           "lba format index");
+                return false;
+            }
+
+            break;
+
+        case NVME_RUHA_CTRL:
+            femu_err("      NVME_RUHA_CTRL reclaim unit handle is controller assigned \n");
+            error_setg(errp, "reclaim unit handle is controller assigned");
+            return false;
+
+        default:
+            femu_err("      no such type for ruh->ruha - init error? \n");
+            abort();
+        }
+
+        *ph = *ruhid;
+    }
+
+    return true;
+}
+
 static int nvme_init_namespace(FemuCtrl *n, NvmeNamespace *ns, Error **errp)
 {
     NvmeIdNs *id_ns = &ns->id_ns;
@@ -756,7 +893,21 @@ static int nvme_init_namespace(FemuCtrl *n, NvmeNamespace *ns, Error **errp)
     ns->util = bitmap_new(num_blks);
     ns->uncorrectable = bitmap_new(num_blks);
 
-    // ns->subsys = n->subsys;
+    if(!n->subsys){
+        femu_err("  nvme_init_namespace (!n->subsys) n->subsys is NULL \n");
+        ns->params.shared = false;
+    }
+    else{
+        ns->subsys = n->subsys;
+        ns->endgrp = &n->subsys->endgrp;
+        if(!nvme_ns_init_fdp(ns, errp)){
+            femu_err("Something wrong in nvme_ns_init_fdp(ns, errp)\n");
+            return -1;
+        }
+        femu_log("  nvme_init_namespace initialized ns->subsys and ns->endgrp \n");
+    }
+
+    
 
     return 0;
 }
@@ -835,17 +986,17 @@ static void nvme_init_ctrl(FemuCtrl *n)
 
         if (n->subsys->endgrp.fdp.enabled) {
             ctratt |= NVME_CTRATT_FDPS;
-            femu_log("QEMU NVMe : \"I'm NVMe fdp enabled device!\" ctratt hex:%x \n",ctratt);
+            femu_log("FEMU NVMe : \"I'm NVMe fdp enabled device!\" ctratt hex:%x \n",ctratt);
                 // AUDIT sprintf(filename0, "write_log.csv");
                 //fp = fopen(filename0, "w");
                 //fprintf(fp, "test write\n");
                 //fprintf(fp, "start(s),\t\tend(s),\t\tstart(us),\t\tend(us),\t\ttime(s),\t\ttime(us),\t\tpid,\t\truhid,\t\tslba,\t\tnlb,\t\tru->ruamw,\t\truh_action\n");
                 //fclose(fp);
         }else{
-            femu_log("QEMU NVMe : \"VMe fdp disabled device!\" ctratt hex:%x \n",ctratt);
+            femu_log("FEMU NVMe : \"NVMe fdp disabled device!\" ctratt hex:%x \n",ctratt);
         }
     }else{
-        femu_log("QEMU NVMe : \"n->subsys NULL in this device!\" ctratt hex:%x \n",ctratt);
+        femu_log("FEMU NVMe : \"n->subsys NULL in this device!\" ctratt hex:%x \n",ctratt);
     }
 
 

@@ -2164,7 +2164,7 @@ static inline NvmeSecCtrlEntry *nvme_sctrl_for_cntlid(FemuCtrl *n,
 #define FEMU_DEBUG_NVME
 #ifdef FEMU_DEBUG_NVME
 #define femu_debug(fmt, ...) \
-    do { printf("[FEMU] Dbg: " fmt, ## __VA_ARGS__); } while (0)
+    do { fprintf(stderr, "[FEMU] debug: " fmt, ## __VA_ARGS__); } while (0)
 #else
 #define femu_debug(fmt, ...) \
     do { } while (0)

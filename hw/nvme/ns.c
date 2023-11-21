@@ -688,6 +688,8 @@ static void nvme_ns_realize(DeviceState *dev, Error **errp)
     int i;
 
     if (!n->subsys) {
+        femu_err("  nvme_ns_realize (!n->subsys) n->subsys is NULL \n");
+
         /* If no subsys, the ns cannot be attached to more than one ctrl. */
         ns->params.shared = false;
         if (ns->params.detached) {
@@ -704,6 +706,7 @@ static void nvme_ns_realize(DeviceState *dev, Error **errp)
             return;
         }
         ns->subsys = subsys;
+        femu_debug("ns->endgrp init here ?\n");
         ns->endgrp = &subsys->endgrp;
     }
 
