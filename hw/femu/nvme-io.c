@@ -98,7 +98,7 @@ static void nvme_process_sq_io(void *opaque, int index_poller)
             nvme_addr_read(n, addr, (void *)&cmd, sizeof(cmd));
         }
         nvme_inc_sq_head(sq);
-        femu_debug("nvme_process_sq_io here \n");
+        //femu_debug("nvme_process_sq_io here \n");
         req = QTAILQ_FIRST(&sq->req_list);
         QTAILQ_REMOVE(&sq->req_list, req, entry);
         memset(&req->cqe, 0, sizeof(req->cqe));
@@ -246,7 +246,6 @@ void *nvme_poller(void *arg)
             NvmeSQueue *sq = n->sq[index];
             NvmeCQueue *cq = n->cq[index];
             if (sq && sq->is_active && cq && cq->is_active) {
-                femu_err("nvme_poller : nvme_process_sq_io(sq, index %d\n);",index);
                 nvme_process_sq_io(sq, index);
             }
             nvme_process_cq_cpl(n, index);
@@ -263,7 +262,7 @@ void *nvme_poller(void *arg)
                 NvmeSQueue *sq = n->sq[i];
                 NvmeCQueue *cq = n->cq[i];
                 if (sq && sq->is_active && cq && cq->is_active) {
-                    femu_err("nvme_poller : nvme_process_sq_io(sq, index %d\n);",index);
+                    //femu_err("nvme_poller : nvme_process_sq_io(sq, index %d\n);",index);
                     nvme_process_sq_io(sq, index);
                 }
             }
@@ -547,7 +546,8 @@ static inline int log_event(NvmeRuHandle *ruh, uint8_t event_type)
     ruhid = ns->fdp.phs[ph];
 
     ruh = &endgrp->fdp.ruhs[ruhid];
-    ru = &ruh->rus[rg];
+    //ru = &ruh->rus[rg];
+    ru = ruh->rus[rg];
     femu_log("ruh->event_filter %lu (>> nvme_fdp_evf_shifts[NFW]%u &0xff = %u) \n", \
                                             ruh->event_filter,nvme_fdp_evf_shifts[FDP_EVT_RU_NOT_FULLY_WRITTEN],\
                                             nvme_fdp_evf_shifts[FDP_EVT_RU_NOT_FULLY_WRITTEN] & 0xff);
@@ -658,16 +658,19 @@ static uint16_t nvme_io_mgmt_recv_ruhs(FemuCtrl *n, NvmeRequest *req,
 
         for (rg = 0; rg < endgrp->fdp.nrg; rg++, ruhsd++) {
             uint16_t pid = nvme_make_pid(ns, rg, ph);
-
+            NvmeReclaimUnit *ru = ruh->rus[rg];
             ruhsd->pid = cpu_to_le16(pid);
             ruhsd->ruhid = *ruhid;
             ruhsd->earutr = 0;
-            ruhsd->ruamw = cpu_to_le64(ruh->rus[rg].ruamw);
+            ruhsd->ruamw = cpu_to_le64(ru->ruamw);
         }
     }
     femu_debug("\t\t\tfin for (ph = 0; ph < ns->fdp.nphs; ph++, ruhid++). \n nvme_c2h(n, buf, trans_len, req);\n");
-
-    return nvme_c2h(n, buf, trans_len, req);
+    NvmeCmd *cmd = &req->cmd;
+    uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
+    uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
+    return dma_read_prp(n, (uint8_t *)buf, trans_len, prp1, prp2);
+    //return nvme_c2h(n, buf, trans_len, req);
 }
 
 static uint16_t nvme_io_mgmt_recv(FemuCtrl *n, NvmeRequest *req)

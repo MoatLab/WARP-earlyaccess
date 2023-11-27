@@ -235,7 +235,8 @@ typedef struct NvmeRuHandle {
 
     /* reclaim units indexed by reclaim group */
     // I will use it as a wptr for now - FIX ME AFTER MULTI-RG SUPPORT 
-    NvmeReclaimUnit *rus;
+    //NvmeReclaimUnit *rus;
+    NvmeReclaimUnit **rus;
 } NvmeRuHandle;
 
 typedef struct NvmeEnduranceGroup {
@@ -248,6 +249,7 @@ typedef struct NvmeEnduranceGroup {
         uint16_t nrg;
         uint8_t  rgif;              
         uint64_t runs;
+        uint64_t nru;
 
         uint64_t hbmw;
         uint64_t mbmw;
@@ -298,6 +300,7 @@ typedef struct NvmeSubsystem {
             uint64_t runs;
             uint16_t nruh;
             uint32_t nrg;
+            uint64_t nru;
         } fdp;
     } params;
 } NvmeSubsystem;
@@ -731,7 +734,6 @@ enum NvmeIoCommands {
     NVME_CMD_OC_WRITE           = 0x91,
     NVME_CMD_OC_READ            = 0x92,
 };
-
 typedef struct NvmeDeleteQ {
     uint8_t     opcode;
     uint8_t     flags;
@@ -2091,7 +2093,7 @@ uint16_t nvme_pid2rg(NvmeNamespace *ns, uint16_t pid);
 bool nvme_parse_pid(NvmeNamespace *ns, uint16_t pid, uint16_t *ph, uint16_t *rg);
 bool nvme_update_ruh(FemuCtrl *n, NvmeNamespace *ns, uint16_t pid);
 
-void nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t nlb);
+uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t nlb);
 int nvme_register_ocssd12(FemuCtrl *n);
 int nvme_register_ocssd20(FemuCtrl *n);
 int nvme_register_nossd(FemuCtrl *n);

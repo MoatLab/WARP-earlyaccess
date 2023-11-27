@@ -1474,7 +1474,7 @@ void nvme_process_sq_admin(void *opaque)
         } else {
             addr = nvme_discontig(cq->prp_list, cq->tail, n->page_size, n->cqe_size);
         }
-        femu_debug("        qemu-nvme nvme_process_sq_admin nvme_addr_write(n, addr, (void *)&cqe, sizeof(cqe));  \n");
+        //femu_debug("        qemu-nvme nvme_process_sq_admin nvme_addr_write(n, addr, (void *)&cqe, sizeof(cqe));  \n");
         nvme_addr_write(n, addr, (void *)&cqe, sizeof(cqe));
         nvme_inc_cq_tail(cq);
         nvme_isr_notify_admin(cq);

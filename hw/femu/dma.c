@@ -330,12 +330,12 @@ uint16_t nvme_map_prp(FemuCtrl *n, NvmeSg *sg, uint64_t prp1,
 {
     hwaddr trans_len = n->page_size - (prp1 % n->page_size);
     trans_len = MIN(len, trans_len);
-    int num_prps = (len >> n->page_bits) + 1;
+    //int num_prps = (len >> n->page_bits) + 1;
     uint16_t status;
     int ret;
 
     //trace_pci_nvme_map_prp(trans_len, len, prp1, prp2, num_prps);
-    femu_log("  dma.c: nvme_map_prp %d\n", num_prps);
+    //femu_log("  dma.c: nvme_map_prp %d\n", num_prps);
     nvme_sg_init(n, sg, nvme_addr_is_dma(n, prp1));
 
     status = nvme_map_addr(n, sg, prp1, trans_len);

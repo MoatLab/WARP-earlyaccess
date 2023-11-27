@@ -169,7 +169,7 @@ static void nvme_process_db_admin(FemuCtrl *n, hwaddr addr, int val)
         }
 
         cq = n->cq[qid];
-        femu_debug("    femu-nvme nvme_process_db DONE cq = n->cq[qid]; \n");
+        //femu_debug("    femu-nvme nvme_process_db DONE cq = n->cq[qid]; \n");
         if (new_val >= cq->size) {
             return;
         }
@@ -190,7 +190,7 @@ static void nvme_process_db_admin(FemuCtrl *n, hwaddr addr, int val)
         }
 
         sq->tail = new_val;
-        femu_debug("\t nvme_process_sq_admin (nvme_admin_cmd)\n");
+        //femu_debug("\t nvme_process_sq_admin (nvme_admin_cmd)\n");
         nvme_process_sq_admin(sq);
     }
 }
@@ -202,7 +202,7 @@ static void nvme_process_db_io(FemuCtrl *n, hwaddr addr, int val)
     NvmeSQueue *sq;
 
     if (n->dataplane_started) {
-        femu_debug("\t nvme_process_db_io (dataplane started, return)\n");
+        //femu_debug("\t nvme_process_db_io (dataplane started, return)\n");
         return;
     }
 
@@ -252,14 +252,14 @@ static void nvme_mmio_write(void *opaque, hwaddr addr, uint64_t data, unsigned s
     FemuCtrl *n = (FemuCtrl *)opaque;
     //femu_debug("nvme_mmio_write ");
     if (addr < sizeof(n->bar)) {
-        femu_debug(" femu-nvme nvme_write_bar(addr 0x%lx, data 0x%lx, size 0x%x ) \n", addr, data, size);
+        // femu_debug(" femu-nvme nvme_write_bar(addr 0x%lx, data 0x%lx, size 0x%x ) \n", addr, data, size);
         nvme_write_bar(n, addr, data, size);
         
     } else if (addr >= 0x1000 && addr < 0x1008) {
-        femu_debug(" femu-nvme nvme_process_db hwaddr : %lx val %lu size 0x%x -admin \n", addr, data, size);
+        // femu_debug(" femu-nvme nvme_process_db hwaddr : %lx val %lu size 0x%x -admin \n", addr, data, size);
         nvme_process_db_admin(n, addr, data);
     } else {
-        femu_debug(" femu-nvme nvme_process_db hwaddr : %lx val %lu size 0x%x -io \n", addr, data, size);
+        // femu_debug(" femu-nvme nvme_process_db hwaddr : %lx val %lu size 0x%x -io \n", addr, data, size);
         nvme_process_db_io(n, addr, data);
     }
 }
@@ -626,6 +626,7 @@ static bool nvme_calc_rgif(uint16_t nruh, uint16_t nrg, uint8_t *rgif)
 static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //setting nrg and runs
 {
     NvmeEnduranceGroup *endgrp = &subsys->endgrp;
+    uint64_t tt_nru = subsys->params.fdp.nru; 
 
     if (!subsys->params.fdp.runs) {
         error_setg(errp, "fdp.runs must be non-zero");
@@ -633,7 +634,9 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
     }
 
     endgrp->fdp.runs = subsys->params.fdp.runs;
+    endgrp->fdp.nru = subsys->params.fdp.nru;
     femu_log(" endgrp->fdp.runs = %lu\n", endgrp->fdp.runs);
+    //ru ns = reclaim unit normal "size" 
 
     if (!subsys->params.fdp.nrg) {
         error_setg(errp, "fdp.nrg must be non-zero");
@@ -658,6 +661,21 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
         return false;
     }
 
+    endgrp->fdp.rus = g_new(NvmeReclaimUnit *, endgrp->fdp.nrg);
+    for(int i=0 ; i < endgrp->fdp.nrg; i++){
+        endgrp->fdp.rus[i] = g_new(NvmeReclaimUnit, tt_nru);
+        femu_log("      endgrp->fdp.rus[%d] = new %ld NvmeReclaimUnits\n", i, tt_nru);
+        // INHO
+        //For sure , but qemu fdp implementation cleary does not consider 1ruh -> N rus situation.
+        //Thinking about the figures such as rus inside the reclaim group in SNIA, 
+        //figures from samsung that describe how the ruh use and write to the multiple rus by their own color(actually ruhid which is stream id)
+        // ruh.rus has JUST ONE RECLAIM UNIT per reclaim group is totally NONSENSE. 
+        // So what I am gonna do is 1. setup rus and rgs 2. and make ruh points to them by their pointers.
+        //This means g_new statment inside the ruh initialization code is no longer valid.
+
+    }
+    
+
     endgrp->fdp.ruhs = g_new(NvmeRuHandle, endgrp->fdp.nruh);
 
     for (uint16_t ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
@@ -665,12 +683,13 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
             .ruht = NVME_RUHT_INITIALLY_ISOLATED,
             .ruha = NVME_RUHA_UNUSED,
         };
-
-        endgrp->fdp.ruhs[ruhid].rus = g_new(NvmeReclaimUnit, endgrp->fdp.nrg);
-    }
-    endgrp->fdp.rus = g_new(NvmeReclaimUnit *, endgrp->fdp.nrg);
-    for(int i=0 ; i < endgrp->fdp.nrg; i++){
-        endgrp->fdp.rus[i] = g_new(NvmeReclaimUnit, endgrp->fdp.runs);
+        //Prev Anot : This means g_new statment inside the ruh initialization code is no longer valid.
+        //endgrp->fdp.ruhs[ruhid].rus = g_new(NvmeReclaimUnit, endgrp->fdp.nrg);
+        endgrp->fdp.ruhs[ruhid].rus = g_new(NvmeReclaimUnit *, endgrp->fdp.nrg);
+        for(int rg=0 ; rg < endgrp->fdp.nrg; ++rg){
+            //endgrp->fdp.ruhs[ruhid].rus = &endgrp->fdp.rus[rg][ruhid];
+            endgrp->fdp.ruhs[ruhid].rus[rg] = &endgrp->fdp.rus[rg][ruhid];
+        }
     }
 
     endgrp->fdp.enabled = true;
@@ -710,6 +729,7 @@ static Property nvme_subsystem_props[] = {
                      NVME_DEFAULT_RU_SIZE),
     DEFINE_PROP_UINT32("fdp.nrg", NvmeSubsystem, params.fdp.nrg, 1),
     DEFINE_PROP_UINT16("fdp.nruh", NvmeSubsystem, params.fdp.nruh, 0),
+    DEFINE_PROP_UINT64("fdp.nru", NvmeSubsystem, params.fdp.nru, 128),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -761,7 +781,7 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
     unsigned int *ruhid;
     char *r, *p, *token;
     uint16_t *ph;
-    
+    uint64_t tt_nru = endgrp->fdp.nru;
     femu_log("  nvme_ns_init_fdp here \n");
     
     if (!ns->params.fdp.ruhs) {
@@ -782,9 +802,20 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
             //ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.ds;
             ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.lbads;
 
+            
             for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
-                ruh->rus[rg].ruamw = ruh->ruamw;
+                for(uint16_t i = 0; i < tt_nru; i++){
+                    endgrp->fdp.rus[rg][i].ruamw = ruh->ruamw;
+                }
             }
+            // for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
+            //     //ruh->rus[rg].ruamw = ruh->ruamw;
+            //     if(ruh->rus[rg]->ruamw != ruh->ruamw){
+            //         femu_err("      if(ruh->rus[%d]->ruamw%lu != ruh->ruamw %lu); fin \n",rg,ruh->rus[rg]->ruamw, ruh->ruamw);
+            //         ruh->rus[rg]->ruamw = ruh->ruamw;
+            //     }
+            // }
+            
         } else if (ruh->lbafi != lbafi) {
             error_setg(errp, "lba format index of controller assigned "
                        "reclaim unit handle does not match namespace lba "
@@ -842,7 +873,8 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
             ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.lbads;
 
             for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
-                ruh->rus[rg].ruamw = ruh->ruamw;
+                //ruh->rus[rg].ruamw = ruh->ruamw;
+                ruh->rus[rg]->ruamw = ruh->ruamw;
             }
 
             break;

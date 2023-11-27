@@ -31,10 +31,10 @@
 #define NVME_FDP_MAXPIDS 128
 
 #define femu_err(fmt, ...) \
-    do { fprintf(stderr, "[FEMU] Err: " fmt, ## __VA_ARGS__); } while (0)
+    do { fprintf(stderr, "[QEMU] Err: " fmt, ## __VA_ARGS__); } while (0)
 
 #define femu_log(fmt, ...) \
-    do { printf("[FEMU] Log: " fmt, ## __VA_ARGS__); } while (0)
+    do { fprintf(stderr, "[QEMU] Log: " fmt, ## __VA_ARGS__); } while (0)
 
 #define FEMU_DEBUG
 //#ifdef FEMU_DEBUG
@@ -64,7 +64,7 @@ typedef struct NvmeReclaimUnit {
 } NvmeReclaimUnit;
 
 typedef struct NvmeRuHandle {
-    uint8_t  ruht;          //Inho : No such code refering this
+    uint8_t  ruht;          //Inho : 0:reserved 1 : initially 2: permanantly
     uint8_t  ruha;
     uint64_t event_filter;
     uint8_t  lbafi;

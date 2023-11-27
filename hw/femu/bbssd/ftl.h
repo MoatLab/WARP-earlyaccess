@@ -7,6 +7,8 @@
 #define INVALID_LPN     (~(0ULL))
 #define UNMAPPED_PPA    (~(0ULL))
 
+#define SSD_STREAM_WRITE 
+
 typedef struct FemuReclaimGroup FemuReclaimGroup;
 typedef struct FemuRuHandle FemuRuHandle;
 typedef struct FemuReclaimUnit FemuReclaimUnit; 
@@ -255,7 +257,7 @@ typedef struct FemuReclaimGroup{
 
     //FemuRuHandle *ruhs;
     FemuReclaimUnit *rus;
-    uint64_t tt_runs;
+    uint64_t tt_nru;
     struct ru_mgmt *ru_mgmt;
 
 
@@ -278,10 +280,11 @@ typedef struct FemuReclaimUnit{
 }FemuReclaimUnit;
 
 typedef struct FemuRuHandle{
-    int ruh_type;
-    int ruhid;
-    int n_ru;
+    uint16_t ruh_type;
+    uint16_t ruhid;               //how can ftl know this?
+    //int n_ru;
     int ru_in_use_cnt;
+    uint16_t curr_rg;               //init 0
     NvmeRuHandle *ruh;              //1. pointer to original reclaim unit handle
     FemuReclaimUnit **rus;           //2. List that this ruh have. I don't think this is necessary. 
     FemuReclaimUnit *curr_ru;       //3. Current wptr (RU).
@@ -311,7 +314,7 @@ struct ssd {
 };
 
 void ssd_init(FemuCtrl *n);
-
+#define FEMU_DEBUG_FTL
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \
     do { fprintf(stderr, "[FEMU] FTL-Dbg: " fmt, ## __VA_ARGS__); } while (0)

@@ -419,6 +419,7 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
             ruh->ruha = NVME_RUHA_CTRL;
             ruh->lbafi = lbafi;
             ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.ds;
+            femu_log(" ns.c : ruh->ruamw : %lu, (endgrp->fdp.runs %lu >> ns->lbaf.ds %d; )\n", ruh->ruamw ,endgrp->fdp.runs, ns->lbaf.ds );
 
             for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
                 ruh->rus[rg].ruamw = ruh->ruamw;

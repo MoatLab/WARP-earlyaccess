@@ -207,10 +207,11 @@
 #include <stdio.h>
 #include <sys/time.h>
 
+#ifdef FDP_LOGGING
 FILE *fp;
 char filename0[100] = {0,};
 struct timeval start, end;
-
+#endif
 
 #define NVME_MAX_IOQPAIRS 0xffff
 #define NVME_DB_SIZE  4
@@ -494,25 +495,30 @@ static bool nvme_update_ruh(NvmeCtrl *n, NvmeNamespace *ns, uint16_t pid)
 
     ruh = &endgrp->fdp.ruhs[ruhid];
     ru = &ruh->rus[rg];
-    femu_log("ruh->event_filter %lu (>> nvme_fdp_evf_shifts[NFW]%u &0xff = %u) \n", \
-                                            ruh->event_filter,nvme_fdp_evf_shifts[FDP_EVT_RU_NOT_FULLY_WRITTEN],\
-                                            nvme_fdp_evf_shifts[FDP_EVT_RU_NOT_FULLY_WRITTEN] & 0xff);
-    femu_log("ruh->event_filter %lu (>> nvme_fdp_evf_shifts[MRE]%u &0xff = %u) \n", \
-                                            ruh->event_filter,nvme_fdp_evf_shifts[FDP_EVT_MEDIA_REALLOC],\
-                                            nvme_fdp_evf_shifts[FDP_EVT_MEDIA_REALLOC] & 0xff);
-
+    /*
+    // //femu_log("ruh->event_filter %lu (>> nvme_fdp_evf_shifts[NFW]%u &0xff = %u) \n", \
+    //                                         ruh->event_filter,nvme_fdp_evf_shifts[FDP_EVT_RU_NOT_FULLY_WRITTEN],\
+    //                                         nvme_fdp_evf_shifts[FDP_EVT_RU_NOT_FULLY_WRITTEN] & 0xff);
+    // //femu_log("ruh->event_filter %lu (>> nvme_fdp_evf_shifts[MRE]%u &0xff = %u) \n", \
+    //                                         ruh->event_filter,nvme_fdp_evf_shifts[FDP_EVT_MEDIA_REALLOC],\
+    //                                         nvme_fdp_evf_shifts[FDP_EVT_MEDIA_REALLOC] & 0xff);
+    */
     if (ru->ruamw) {
                             //0                                         //32
-        if (log_event(ruh, FDP_EVT_RU_NOT_FULLY_WRITTEN) || log_event(ruh, FDP_EVT_MEDIA_REALLOC)) {
+        if (log_event(ruh, FDP_EVT_RU_NOT_FULLY_WRITTEN)) {
             e = nvme_fdp_alloc_event(n, &endgrp->fdp.host_events);
             
             if( log_event(ruh, FDP_EVT_MEDIA_REALLOC)){
                 e->type = FDP_EVT_MEDIA_REALLOC;
+                #ifdef FDP_LOGGING
                 fprintf(fp, "%u\n",FDP_EVT_MEDIA_REALLOC);
+                #endif
             
             }
             else{
+                #ifdef FDP_LOGGING
                 fprintf(fp, "%u\n",FDP_EVT_RU_NOT_FULLY_WRITTEN);
+                #endif
                 e->type = FDP_EVT_RU_NOT_FULLY_WRITTEN;
             
             }
@@ -522,7 +528,9 @@ static bool nvme_update_ruh(NvmeCtrl *n, NvmeNamespace *ns, uint16_t pid)
             e->nsid = cpu_to_le32(ns->params.nsid);
             e->rgid = cpu_to_le16(rg);
             e->ruhid = cpu_to_le16(ruhid);
+            #ifdef FDP_LOGGING
             fprintf(fp, "%u\n",FDP_EVT_RU_NOT_FULLY_WRITTEN);
+            #endif
         }
 
         /* log (eventual) GC overhead of prematurely swapping the RU */
@@ -3505,31 +3513,43 @@ static void nvme_do_write_fdp(NvmeCtrl *n, NvmeRequest *req, uint64_t slba,
 
     nvme_fdp_stat_inc(&ns->endgrp->fdp.hbmw, data_size);
     nvme_fdp_stat_inc(&ns->endgrp->fdp.mbmw, data_size);
+        
+    femu_log("  nvme_do_write_fdp on nlb:%u amw :%lu -while start\n",nlb, ru->ruamw);
 
     while (nlb) {
         if (nlb < ru->ruamw) {        
-            gettimeofday(&end,NULL);
 
             //              1           2       3           4           5           6           7       8       9       10          11              
         	//fprintf(fp, "start(s)   end(s)  start(us)   end(us)     time(s)     time(us),   pid,    ruhid, slba,   nlb,    ru->ruamw, ruh_action\n");
+            #ifdef FDP_LOGGING
+            gettimeofday(&end,NULL);
             fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t%u\n",\
                         start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,\
                         (end.tv_sec - start.tv_sec), (end.tv_usec-start.tv_usec),\
                         pid, ruhid, slba, nlb, ru->ruamw, 1);
+            #endif
             ru->ruamw -= nlb;
             //data has written. latency model here
             break;
         }
 
         nlb -= ru->ruamw;
+        #ifdef FDP_LOGGING
         gettimeofday(&end,NULL);
         fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t\n",\
                      start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,\
                      (end.tv_sec - start.tv_sec), (end.tv_usec-start.tv_usec),\
                      pid, ruhid, slba, nlb, ru->ruamw);
+        #endif
+        femu_log("    nvme_update_ruh -enter\n");
         nvme_update_ruh(n, ns, pid);
+        femu_log("    nvme_update_ruh -end\n");
+        break;
     }
+    femu_log("  nvme_do_write_fdp on nlb:%u -while fin\n",nlb);
+    #ifdef FDP_LOGGING
     fclose(fp);
+    #endif
 }
 
 static uint16_t nvme_do_write(NvmeCtrl *n, NvmeRequest *req, bool append,
@@ -3643,9 +3663,9 @@ static uint16_t nvme_do_write(NvmeCtrl *n, NvmeRequest *req, bool append,
             zone->w_ptr += nlb;
         }
     } else if (ns->endgrp && ns->endgrp->fdp.enabled) {
-        //femu_log("nvme_do_write on slba:%lu and device is fdp enabled \n",req->slba);
-
+        femu_log("  nvme_do_write on slba:%lu -fdp\n",slba);
         nvme_do_write_fdp(n, req, slba, nlb);
+        femu_log("  END nvme_do_write on slba:%lu -fdp\n",slba);
     }
 
     data_offset = nvme_l2b(ns, slba);
@@ -4352,6 +4372,7 @@ static uint16_t nvme_io_mgmt_recv_ruhs(NvmeCtrl *n, NvmeRequest *req,
             ruhsd->ruhid = *ruhid;
             ruhsd->earutr = 0;
             ruhsd->ruamw = cpu_to_le64(ruh->rus[rg].ruamw);
+            femu_log("  NVME_CMD_IO_MGMT_RECV : nvme_io_mgmt_recv_ruhs ruh->rus[%d].ruamw :%lu \n ", rg, cpu_to_le64(ruh->rus[rg].ruamw));
         }
     }
 
@@ -4477,9 +4498,10 @@ static uint16_t nvme_io_cmd(NvmeCtrl *n, NvmeRequest *req)
     }
 
     req->ns = ns;
-
+    #ifdef FDP_LOGGING
     sprintf(filename0, "write_log.csv");
     fp = fopen(filename0, "a");
+    #endif
 
     switch (req->cmd.opcode) {
     case NVME_CMD_WRITE_ZEROES:
@@ -4487,8 +4509,10 @@ static uint16_t nvme_io_cmd(NvmeCtrl *n, NvmeRequest *req)
     case NVME_CMD_ZONE_APPEND:
         return nvme_zone_append(n, req);
     case NVME_CMD_WRITE:
+        femu_log("NVME_CMD_WRITE here\n");
         return nvme_write(n, req);
     case NVME_CMD_READ:
+        femu_log("NVME_CMD_READ here\n");
         return nvme_read(n, req);
     case NVME_CMD_COMPARE:
         return nvme_compare(n, req);
@@ -4497,10 +4521,13 @@ static uint16_t nvme_io_cmd(NvmeCtrl *n, NvmeRequest *req)
     case NVME_CMD_VERIFY:
         return nvme_verify(n, req);
     case NVME_CMD_COPY:
+        femu_log("NVME_CMD_COPY here\n");
         return nvme_copy(n, req);
     case NVME_CMD_ZONE_MGMT_SEND:
+        femu_log("NVME_CMD_ZONE_MGMT_SEND here\n");
         return nvme_zone_mgmt_send(n, req);
     case NVME_CMD_ZONE_MGMT_RECV:
+        femu_log("NVME_CMD_ZONE_MGMT_RECV here\n");
         return nvme_zone_mgmt_recv(n, req);
     case NVME_CMD_IO_MGMT_RECV:
         femu_log("NVME_CMD_IO_MGMT_RECV here\n");
@@ -8330,11 +8357,13 @@ static void nvme_init_ctrl(NvmeCtrl *n, PCIDevice *pci_dev)
         if (n->subsys->endgrp.fdp.enabled) {
             ctratt |= NVME_CTRATT_FDPS;
             femu_log("QEMU NVMe : \"I'm NVMe fdp enabled device!\" ctratt hex:%x \n",ctratt);
+                #ifdef FDP_LOGGING
                 sprintf(filename0, "write_log.csv");
                 fp = fopen(filename0, "w");
                 fprintf(fp, "test write\n");
                 fprintf(fp, "start(s),\t\tend(s),\t\tstart(us),\t\tend(us),\t\ttime(s),\t\ttime(us),\t\tpid,\t\truhid,\t\tslba,\t\tnlb,\t\tru->ruamw,\t\truh_action\n");
                 fclose(fp);
+                #endif
         }else{
             femu_log("QEMU NVMe : \"VMe fdp disabled device!\" ctratt hex:%x \n",ctratt);
         }
@@ -8459,9 +8488,11 @@ static void nvme_exit(PCIDevice *pci_dev)
     g_free(n->cq);
     g_free(n->sq);
     g_free(n->aer_reqs);
-    
+
+    #ifdef FDP_LOGGING
     fclose(fp);
-    
+    #endif
+
     if (n->params.cmb_size_mb) {
         g_free(n->cmb.buf);
     }
