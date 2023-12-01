@@ -314,7 +314,7 @@ struct ssd {
 };
 
 void ssd_init(FemuCtrl *n);
-#define FEMU_DEBUG_FTL
+//#define FEMU_DEBUG_FTL
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \
     do { fprintf(stderr, "[FEMU] FTL-Dbg: " fmt, ## __VA_ARGS__); } while (0)

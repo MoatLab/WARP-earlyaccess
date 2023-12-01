@@ -130,5 +130,8 @@ trace-dtrace-root.h
 trace-dtrace-root.dtrace
 trace-ust-all.h
 trace-ust-all.c
+
+*.fd
 build-femu/
+build-femu/*
 .vscode/

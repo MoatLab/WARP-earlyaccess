@@ -298,6 +298,7 @@ static void fdp_inc_ru_write_pointer(struct ssd *ssd, FemuReclaimUnit *ru){
     wptr->pg    =   0;
     wptr->blk   =   wptr->curline->id;
     wptr->pl    =   0;
+    ru->next_line_index++;
 }
 
 static void fdp_set_ru_write_pointer(struct ssd *ssd, FemuReclaimUnit *ru){
@@ -410,10 +411,8 @@ static FemuReclaimUnit * fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGrou
                     for(int i =0; i<ru->n_lines; ++i){        
                         /* move current line to {victim,full} line list */
                         struct line *line = ru->lines[i];
-                        
                         if( line->vpc != spp->pgs_per_line){
                             ftl_assert(line->vpc >= 0 && line->vpc < spp->pgs_per_line);
-                            //valid info
                             ru->vpc += line->vpc;
                             isFull=false;
                         }
@@ -430,9 +429,7 @@ static FemuReclaimUnit * fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGrou
                     if(isFull){
                         /* all pgs are still valid, move to full line list */
                         ftl_assert(wpp->curline->ipc == 0);
-                        //QTAILQ_INSERT_TAIL(&lm->full_line_list, wpp->curline, entry);
                         QTAILQ_INSERT_TAIL(&rm->full_ru_list, curr_ru, entry);
-                        //lm->full_line_cnt++;
                         rm->full_ru_cnt++;
                     }else{
                         pqueue_insert(rm->victim_ru_pq, curr_ru);
@@ -458,7 +455,6 @@ static FemuReclaimUnit * fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGrou
                 else{
                     //ftl_err("ru->lines %p  \n", ru->lines);
                     fdp_inc_ru_write_pointer(ssd, ru);
-                    ru->next_line_index++;
                     ftl_debug("             RU 1 superblock fin. ru->next_line_index : %d. fdp_set_ru_write_pointer(ssd, ru); fin \n", ru->next_line_index);
                 }
             }
@@ -1307,6 +1303,57 @@ static void mark_line_free(struct ssd *ssd, struct ppa *ppa)
     /* move this line to free line list */
     QTAILQ_INSERT_TAIL(&lm->free_line_list, line, entry);
     lm->free_line_cnt++;
+}
+
+static int do_reclaim_gc(struct ssd *ssd, uint16_t rgidx, uint16_t ruhid, bool force)
+{
+    struct line *victim_line = NULL;
+    struct ssdparams *spp = &ssd->sp;
+    struct nand_lun *lunp;
+    struct ppa ppa;
+    int ch, lun;
+    FemuReclaimGroup *rg = &ssd->rg[rgidx];
+    struct ru_mgmt *ru_mgmt = rg->ru_mgmt;
+    uint16_t ruht = ssd->ruhs[ruhid].ruh_type;
+
+    //1. victim selection
+    victim_line = select_victim_line(ssd, force);
+    if (!victim_line) {
+        ftl_err("Unable to find victim line! \n");
+        return -1;
+    }
+
+    ppa.g.blk = victim_line->id;
+    ftl_debug("GC-ing line:%d,ipc=%d,victim=%d,full=%d,free=%d\n", ppa.g.blk,
+              victim_line->ipc, ssd->lm.victim_line_cnt, ssd->lm.full_line_cnt,
+              ssd->lm.free_line_cnt);
+
+    //copy back valid data
+    for (ch = 0; ch < spp->nchs; ch++) {
+        for (lun = 0; lun < spp->luns_per_ch; lun++) {
+            ppa.g.ch = ch;
+            ppa.g.lun = lun;
+            ppa.g.pl = 0;
+            lunp = get_lun(ssd, &ppa);
+            clean_one_block(ssd, &ppa);
+            mark_block_free(ssd, &ppa);
+
+            if (spp->enable_gc_delay) {
+                struct nand_cmd gce;
+                gce.type = GC_IO;
+                gce.cmd = NAND_ERASE;
+                gce.stime = 0;
+                ssd_advance_status(ssd, &ppa, &gce);
+            }
+
+            lunp->gc_endtime = lunp->next_lun_avail_time;
+        }
+    }
+
+    // update line status 
+    mark_line_free(ssd, &ppa);
+
+    return 0;
 }
 
 static int do_gc(struct ssd *ssd, bool force)
