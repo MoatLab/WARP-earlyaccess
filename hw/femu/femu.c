@@ -783,9 +783,10 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
     uint16_t *ph;
     uint64_t tt_nru = endgrp->fdp.nru;
     femu_log("  nvme_ns_init_fdp here \n");
-    
-    if (!ns->params.fdp.ruhs) {
-        femu_err("      (!ns->params.fdp.ruhs) ns->params.fdp.ruhs was NULL \n");
+    //TODO-inho 1
+    if (!ns->params.fdp.ruhs && !endgrp->fdp.ruhs) {
+        femu_err("      (!ns->params.fdp.ruhs) ns->params.fdp.ruhs was NULL (setting )\n");
+        
         ns->fdp.nphs = 1;
         ph = ns->fdp.phs = g_new(uint16_t, 1);
 
@@ -802,7 +803,7 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
             //ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.ds;
             ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.lbads;
 
-            
+            femu_err("     nvme_ns_init_fdp - endgrp->fdp.rus[rg][i].ruamw update; \n");
             for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
                 for(uint16_t i = 0; i < tt_nru; i++){
                     endgrp->fdp.rus[rg][i].ruamw = ruh->ruamw;
@@ -821,16 +822,73 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
                        "reclaim unit handle does not match namespace lba "
                        "format index");
             return false;
+        }else{
+            femu_err("     FIND ruh = nvme_find_ruh_by_attr(endgrp, NVME_RUHA_CTRL, ph); \n");
         }
 
         return true;
     }
-
-    ruhid = ruhids = g_new0(unsigned int, endgrp->fdp.nruh);
     femu_log("      ruhid (char *) initialized as char[%d] \n", endgrp->fdp.nruh);
+    if(endgrp->fdp.ruhs){
+        ruhid = ruhids = g_new0(unsigned int, endgrp->fdp.nruh);
+        ns->fdp.nphs = endgrp->fdp.nruh;
+        femu_log("      ns->fdp.nphs : %d \n",ns->fdp.nphs);
+        ph = ns->fdp.phs = g_new(uint16_t, ns->fdp.nphs);
+        
+        for (unsigned int i = 0; i < ns->fdp.nphs; i++, ruhid++, ph++) {
+            if (*ruhid >= endgrp->fdp.nruh) {
+                femu_err("      (*ruhid >= endgrp->fdp.nruh) invalid reclaim unit handle identifier \n");
+                error_setg(errp, "invalid reclaim unit handle identifier");
+                return false;
+            }
+            ruh = &endgrp->fdp.ruhs[*ruhid];
+            
+            switch (ruh->ruha) {
+                case NVME_RUHA_UNUSED:
+                    femu_log("      NVME_RUHA_UNUSED. set as ruh->ruha = NVME_RUHA_HOST;\n");
+                    ruh->ruha = NVME_RUHA_HOST;
+                    ruh->lbafi = lbafi;
+                    //ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.ds;
+                    ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.lbads;
 
+                    for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
+                        //ruh->rus[rg].ruamw = ruh->ruamw;
+                        ruh->rus[rg]->ruamw = ruh->ruamw;
+                    }
+
+                    break;
+
+                case NVME_RUHA_HOST:
+                    if (ruh->lbafi != lbafi) {
+                        femu_err("      (ruh->lbafi != lbafi) NVME_RUHA_HOST  reclaim unit handle does not match namespace \n");
+
+                        error_setg(errp, "lba format index of host assigned"
+                                "reclaim unit handle does not match namespace "
+                                "lba format index");
+                        return false;
+                    }
+
+                    break;
+
+                case NVME_RUHA_CTRL:
+                    femu_err("      NVME_RUHA_CTRL reclaim unit handle is controller assigned \n");
+                    error_setg(errp, "reclaim unit handle is controller assigned");
+                    return false;
+
+                default:
+                    femu_err("      no such type for ruh->ruha - init error? \n");
+                    abort();
+            }
+            *ph = *ruhid;
+
+        }
+        return true;    //instead of tokenizing 1;2;3;4, allocate sequentially
+    }
+    
+    ruhid = ruhids = g_new0(unsigned int, endgrp->fdp.nruh);
+    femu_log("          r = p = strdup(ns->params.fdp.ruhs %s);\n", ns->params.fdp.ruhs);
     r = p = strdup(ns->params.fdp.ruhs);
-
+    femu_log("          (token = qemu_strsep(&p, ;)) != NULL\n");
     /* parse the placement handle identifiers */
     while ((token = qemu_strsep(&p, ";")) != NULL) {
         ns->fdp.nphs += 1;
@@ -847,9 +905,9 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
             return false;
         }
     }
+    femu_err("ns->fdp.nphs : %d \n",ns->fdp.nphs);
 
     free(r);
-
     ph = ns->fdp.phs = g_new(uint16_t, ns->fdp.nphs);
 
     ruhid = ruhids;
@@ -1329,6 +1387,7 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("ch_xfer_lat", FemuCtrl, bb_params.ch_xfer_lat, 0),
     DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.gc_thres_pcent, 75),
     DEFINE_PROP_INT32("gc_thres_pcent_high", FemuCtrl, bb_params.gc_thres_pcent_high, 95),
+    DEFINE_PROP_STRING("fdp.ruhs", NvmeNamespace, params.fdp.ruhs),
     DEFINE_PROP_LINK("subsys", FemuCtrl, subsys, TYPE_NVME_SUBSYS,
                      NvmeSubsystem *),    DEFINE_PROP_END_OF_LIST(),
 };

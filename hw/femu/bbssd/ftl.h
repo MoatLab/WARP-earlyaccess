@@ -329,8 +329,14 @@ void ssd_init(FemuCtrl *n);
 #define ftl_log(fmt, ...) \
     do { printf("[FEMU] FTL-Log: " fmt, ## __VA_ARGS__); } while (0)
 
+
+#ifdef FEMU_DEBUG_FTL
 #define fdp_log(fmt, ...) \
-    do { printf("[FEMU] FTL-Log: " fmt, ## __VA_ARGS__); } while (0)
+    do { printf("[FEMU] FDP-Log: " fmt, ## __VA_ARGS__); } while (0)
+#else
+#define fdp_log(fmt, ...) \
+    do { } while (0)
+#endif
 
 /* FEMU assert() */
 #ifdef FEMU_DEBUG_FTL

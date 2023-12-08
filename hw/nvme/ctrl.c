@@ -3518,7 +3518,6 @@ static void nvme_do_write_fdp(NvmeCtrl *n, NvmeRequest *req, uint64_t slba,
 
     while (nlb) {
         if (nlb < ru->ruamw) {        
-
             //              1           2       3           4           5           6           7       8       9       10          11              
         	//fprintf(fp, "start(s)   end(s)  start(us)   end(us)     time(s)     time(us),   pid,    ruhid, slba,   nlb,    ru->ruamw, ruh_action\n");
             #ifdef FDP_LOGGING

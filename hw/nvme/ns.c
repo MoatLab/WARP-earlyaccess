@@ -403,7 +403,7 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
     unsigned int *ruhid;
     char *r, *p, *token;
     uint16_t *ph;
-
+    //TODO 
     if (!ns->params.fdp.ruhs) {
         ns->fdp.nphs = 1;
         ph = ns->fdp.phs = g_new(uint16_t, 1);

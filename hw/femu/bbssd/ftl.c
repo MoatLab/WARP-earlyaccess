@@ -345,7 +345,7 @@ static FemuReclaimUnit* fdp_get_new_ru(struct ssd *ssd, uint16_t rgidx, uint16_t
     //Superblock *sb = NULL;
     //struct line_mgnt *li_mgnt = &ssd->lm;
     FemuReclaimUnit *new_ru=NULL;
-    ftl_debug("     INSIDE fdp_get_new_ru\n"); 
+    ftl_log("     INSIDE fdp_get_new_ru\n"); 
 
 
     //Step 0. boundary check 
@@ -362,6 +362,7 @@ static FemuReclaimUnit* fdp_get_new_ru(struct ssd *ssd, uint16_t rgidx, uint16_t
     //Step 3. Wrap new free superblock to reclaim unit.
     //ru->wptr = free_line; //static ru->line mapping
     fdp_set_ru_write_pointer(ssd, new_ru);
+    ftl_log("     fdp_set_ru_write_pointer\n"); 
 
     //Step 4. Set new ru to ruh. eruh->rus[rg][curr_idx+1] = new_ru;  eruh->curr_ru = new ru;
     //                      ^ Step0. check the boundary
@@ -369,6 +370,7 @@ static FemuReclaimUnit* fdp_get_new_ru(struct ssd *ssd, uint16_t rgidx, uint16_t
     //eruh->ruh->rus[rgidx] = *new_ru->ru;
     eruh->ruh->rus[rgidx] = new_ru->ru;
     eruh->ru_in_use_cnt++;
+    ftl_log("     eruh->rus[%d] = new_ru fin\n",rgidx); 
 
     return new_ru;
 }
@@ -438,8 +440,9 @@ static FemuReclaimUnit * fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGrou
                     /* current line is used up, pick another empty line */
                     check_addr(wpp->blk, spp->blks_per_pl);
 
-                    ftl_err("ftl inside call new ru, which needs ruh event \n");
+                    ftl_err("ruh %d - call new ru, which needs ruh event \n", ruh->ruhid);
                     new_ru = fdp_get_new_ru(ssd, ru->rgidx, ruh->ruhid);
+                    ftl_err("   fdp_get_new_ru fin\n");
                     //Assume fdp get new ru make ru->lines have free lines
                     //wpp->curline = get_next_free_line(ssd);
 
@@ -709,7 +712,7 @@ static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n)
     spp->enable_gc_delay = true;
 
 
-    spp->lines_per_ru = 4;
+    spp->lines_per_ru = 1;
 
     check_params(spp);
 }
@@ -920,10 +923,13 @@ static void femu_fdp_init_ssd_ru_handles(FemuCtrl *n, struct ssd *ssd){
         //ssd->ruhs[i].n_ru = 0;
         ssd->ruhs[i].ru_in_use_cnt = 0;
         ssd->ruhs[i].curr_rg = 0;
+        //ssd->ruhs[i].rus = ssd->rus;
+        ssd->ruhs[i].rus = (FemuReclaimUnit **) g_malloc0(sizeof(FemuReclaimUnit *) * endgrp->fdp.nrg);
+        femu_debug(" init ssd->ruhs[i].rus %p \n", ssd->ruhs[i].rus);
         for (int j = 0; j < endgrp->fdp.nrg; j++){
             //ssd->ruhs[i].rus[j] = &ruh[i].rus[j];            //TODO
             //FemuReclaimUnit *  incompatible pointer type ‘NvmeReclaimUnit *
-            ssd->ruhs[i].rus = ssd->rus;        //all mapped. 
+            //ssd->ruhs[i].rus = ssd->rus;        //all mapped. 
             ssd->ruhs[i].rus[j] = get_next_free_ru(ssd, &ssd->rg[j]);
             ftl_debug("ssd->ruhs[i].rus[j]->ru %p , &ruh->rus[j] %p , endgrp->fdp.rus[j] :%p \n",  (void *) ssd->ruhs[i].rus[j]->ru,  ruh->rus[j], (void *)endgrp->fdp.rus[j]);
             //ftl_assert((ssd->ruhs[i].rus[j]->ru == &ruh->rus[j]));
@@ -1304,7 +1310,7 @@ static void mark_line_free(struct ssd *ssd, struct ppa *ppa)
     QTAILQ_INSERT_TAIL(&lm->free_line_list, line, entry);
     lm->free_line_cnt++;
 }
-
+/*
 static int do_reclaim_gc(struct ssd *ssd, uint16_t rgidx, uint16_t ruhid, bool force)
 {
     struct line *victim_line = NULL;
@@ -1354,7 +1360,7 @@ static int do_reclaim_gc(struct ssd *ssd, uint16_t rgidx, uint16_t ruhid, bool f
     mark_line_free(ssd, &ppa);
 
     return 0;
-}
+}*/
 
 static int do_gc(struct ssd *ssd, bool force)
 {
