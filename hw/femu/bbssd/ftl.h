@@ -235,6 +235,8 @@ struct nand_cmd {
 
 typedef struct rg_mgmt{
     FemuReclaimGroup * rgs;
+
+    //FALL OUT
 }rg_mgmt;
 
 typedef struct ru_mgmt{
@@ -288,7 +290,7 @@ typedef struct FemuRuHandle{
     NvmeRuHandle *ruh;              //1. pointer to original reclaim unit handle
     FemuReclaimUnit **rus;           //2. List that this ruh have. I don't think this is necessary. 
     FemuReclaimUnit *curr_ru;       //3. Current wptr (RU).
-
+    struct ru_mgmt *ru_mgmt;
 }FemuRuHandle;
 
 struct ssd {
@@ -308,8 +310,11 @@ struct ssd {
 
     /* FEMU backend internal units for the FDP and Stream SSD*/
     FemuReclaimGroup *rg;
+    int nrg;
     FemuReclaimUnit **rus;
+    int nrus;
     FemuRuHandle *ruhs;
+    int nruhs;
     
 };
 
