@@ -3,7 +3,7 @@
 #include "./nvme.h"
 
 #define NVME_SPEC_VER (0x00010400)
-#define NVME_DEFAULT_RU_SIZE (96 * MiB)
+#define NVME_DEFAULT_RU_SIZE (256 * MiB)
 
 
 static void nvme_clear_ctrl(FemuCtrl *n, bool shutdown)
@@ -791,7 +791,11 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
         ph = ns->fdp.phs = g_new(uint16_t, 1);
 
         ruh = nvme_find_ruh_by_attr(endgrp, NVME_RUHA_CTRL, ph);
-        if (!ruh) {
+        if (unlikely(!ruh)) {
+            /**
+             * Note. This entire if-else statement unlikely to execute when we specifies the ruh.
+            */
+            femu_err("      if#1 (!ruh)");
             ruh = nvme_find_ruh_by_attr(endgrp, NVME_RUHA_UNUSED, ph);
             if (!ruh) {
                 error_setg(errp, "no unused reclaim unit handles left");
@@ -807,6 +811,7 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
             for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
                 for(uint16_t i = 0; i < tt_nru; i++){
                     endgrp->fdp.rus[rg][i].ruamw = ruh->ruamw;
+                    femu_err("          endgrp->fdp.rus[%d][%d].ruamw %lu \n" , rg, i,endgrp->fdp.rus[rg][i].ruamw);
                 }
             }
             // for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
@@ -828,7 +833,8 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
 
         return true;
     }
-    femu_log("      ruhid (char *) initialized as char[%d] \n", endgrp->fdp.nruh);
+    femu_err("      fi#1 (!ruh)");
+    femu_log("          ruhid (char *) initialized as char[%d] \n", endgrp->fdp.nruh);
     if(endgrp->fdp.ruhs){
         ruhid = ruhids = g_new0(unsigned int, endgrp->fdp.nruh);
         ns->fdp.nphs = endgrp->fdp.nruh;
@@ -841,21 +847,23 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
                 error_setg(errp, "invalid reclaim unit handle identifier");
                 return false;
             }
+            *ruhid = i;
             ruh = &endgrp->fdp.ruhs[*ruhid];
             
             switch (ruh->ruha) {
                 case NVME_RUHA_UNUSED:
-                    femu_log("      NVME_RUHA_UNUSED. set as ruh->ruha = NVME_RUHA_HOST;\n");
+                    femu_log("      %d NVME_RUHA_UNUSED. set as ruh->ruha = NVME_RUHA_HOST;\n", i);
                     ruh->ruha = NVME_RUHA_HOST;
                     ruh->lbafi = lbafi;
                     //ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.ds;
                     ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.lbads;
 
                     for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
-                        //ruh->rus[rg].ruamw = ruh->ruamw;
-                        ruh->rus[rg]->ruamw = ruh->ruamw;
+                        for(uint16_t i = 0; i < tt_nru; i++){
+                            endgrp->fdp.rus[rg][i].ruamw = ruh->ruamw;
+                            //femu_err("          endgrp->fdp.rus[%d][%d].ruamw %lu \n" , rg, i,endgrp->fdp.rus[rg][i].ruamw);
+                        }
                     }
-
                     break;
 
                 case NVME_RUHA_HOST:
@@ -879,12 +887,13 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
                     femu_err("      no such type for ruh->ruha - init error? \n");
                     abort();
             }
+            femu_log("      %d *ph %d= *ruhid %d;\n", i, *ph, *ruhid);
             *ph = *ruhid;
-
-        }
+        }            
+        //femu_log("          return true;    //instead of tokenizing 1;2;3;4, allocate sequentially\n");
         return true;    //instead of tokenizing 1;2;3;4, allocate sequentially
     }
-    
+    //Tokenizing
     ruhid = ruhids = g_new0(unsigned int, endgrp->fdp.nruh);
     femu_log("          r = p = strdup(ns->params.fdp.ruhs %s);\n", ns->params.fdp.ruhs);
     r = p = strdup(ns->params.fdp.ruhs);

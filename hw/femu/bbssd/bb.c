@@ -4,7 +4,7 @@
 static void bb_init_ctrl_str(FemuCtrl *n)
 {
     static int fsid_vbb = 0;
-    const char *vbbssd_mn = "FEMU BlackBox-SSD Controller";
+    const char *vbbssd_mn = "FEMU Cylon NVMe Flexible Data Placement SSD Controller";
     const char *vbbssd_sn = "vSSD";
 
     nvme_set_ctrl_name(n, vbbssd_mn, vbbssd_sn, &fsid_vbb);
@@ -19,7 +19,7 @@ static void bb_init(FemuCtrl *n, Error **errp)
 
     ssd->dataplane_started_ptr = &n->dataplane_started;
     ssd->ssdname = (char *)n->devname;
-    femu_debug("Starting FEMU in Blackbox-SSD mode ...\n");
+    femu_debug("Starting FEMU in FEMU Cylon NVMe Flexible Data Placement SSD mode ...\n");
     ssd_init(n);
 }
 

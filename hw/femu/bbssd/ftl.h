@@ -62,7 +62,6 @@ enum {
 struct ppa {
     union {
         struct {
-            //uint64_t spblk : ? 
             uint64_t blk : BLK_BITS;
             uint64_t pg  : PG_BITS;
             uint64_t sec : SEC_BITS;
@@ -247,12 +246,17 @@ typedef struct ru_mgmt{
 
     //QTAILQ_HEAD(victim_line_list, line) victim_line_list;
     QTAILQ_HEAD(full_ru_list, FemuReclaimUnit) full_ru_list;
-    int tt_rus;
-    int free_ru_cnt;
+    uint64_t tt_rus;
+    uint64_t free_ru_cnt;
     int victim_ru_cnt_type_init;
     int victim_ru_cnt_type_permnt;
     int victim_ru_cnt;
     int full_ru_cnt;
+    uint64_t gc_thres_rus;
+    uint64_t gc_thres_rus_high;
+
+    double gc_thres_pcent;
+    double gc_thres_pcent_high;
 }ru_mgmt;
 
 typedef struct FemuReclaimGroup{
@@ -310,11 +314,11 @@ struct ssd {
 
     /* FEMU backend internal units for the FDP and Stream SSD*/
     FemuReclaimGroup *rg;
-    int nrg;
+    uint64_t nrg;
     FemuReclaimUnit **rus;
-    int nrus;
+    uint64_t nrus;      // number of ru per rg
     FemuRuHandle *ruhs;
-    int nruhs;
+    uint64_t nruhs;
     
 };
 
