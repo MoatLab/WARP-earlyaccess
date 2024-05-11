@@ -600,34 +600,34 @@ static uint16_t nvme_identify(FemuCtrl *n, NvmeCmd *cmd)
     switch (cns) {
     case NVME_ID_CNS_NS:
     case NVME_ID_CNS_NS_PRESENT:
-        femu_debug("\t\t admin NVME_ID_CNS_NS\n");
+        femu_debug("\t\t admin NVME_ID_CNS_NS %d\n", cmd->opcode);
         return nvme_identify_ns(n, cmd);
     case NVME_ID_CNS_CS_NS:
     case NVME_ID_CNS_CS_NS_PRESENT:
-        femu_debug("\t\t admin NVME_ID_CNS_CS_NS\n");
+        femu_debug("\t\t admin NVME_ID_CNS_CS_NS %d\n", cmd->opcode);
         return nvme_identify_ns_csi(n, cmd);
     case NVME_ID_CNS_CTRL:
-        femu_debug("\t\t admin NVME_ID_CNS_CTRL\n");
+        femu_debug("\t\t admin NVME_ID_CNS_CTRL %d\n", cmd->opcode);
         return nvme_identify_ctrl(n, cmd);
     case NVME_ID_CNS_CS_CTRL:
-        femu_debug("\t\t admin NVME_ID_CNS_CS_CTRL\n");
+        femu_debug("\t\t admin NVME_ID_CNS_CS_CTRL %d\n", cmd->opcode);
         return nvme_identify_ctrl_csi(n, cmd);
     case NVME_ID_CNS_NS_ACTIVE_LIST:
     case NVME_ID_CNS_NS_PRESENT_LIST:
-        femu_debug("\t\t admin NVME_ID_CNS_NS_ACTIVE_LIST\n");
+        femu_debug("\t\t admin NVME_ID_CNS_NS_ACTIVE_LIST %d\n", cmd->opcode);
         return nvme_identify_nslist(n, cmd);
     case NVME_ID_CNS_CS_NS_ACTIVE_LIST:
     case NVME_ID_CNS_CS_NS_PRESENT_LIST:
-        femu_debug("\t\t admin NVME_ID_CNS_CS_NS_ACTIVE_LIST\n");
+        femu_debug("\t\t admin NVME_ID_CNS_CS_NS_ACTIVE_LIST %d\n", cmd->opcode);
         return nvme_identify_nslist_csi(n, cmd);
     case NVME_ID_CNS_NS_DESCR_LIST:
-        femu_debug("\t\t admin NVME_ID_CNS_NS_DESCR_LIST\n");
+        femu_debug("\t\t admin NVME_ID_CNS_NS_DESCR_LIST %d\n", cmd->opcode);
         return nvme_identify_ns_descr_list(n, cmd);
     case NVME_ID_CNS_IO_COMMAND_SET:
-        femu_debug("\t\t admin NVME_ID_CNS_IO_COMMAND_SET\n");
+        femu_debug("\t\t admin NVME_ID_CNS_IO_COMMAND_SET %d\n", cmd->opcode);
         return nvme_identify_cmd_set(n, cmd);
     default:
-        femu_debug("\t\t admin NVME_INVALID_FIELD | NVME_DNR\n");
+        femu_debug("\t\t admin NVME_INVALID_FIELD | NVME_DNR %d\n", cmd->opcode);
         return NVME_INVALID_FIELD | NVME_DNR;
     }
 }
@@ -776,6 +776,99 @@ static uint16_t nvme_set_feature(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
 
     return NVME_SUCCESS;
 }
+
+// static void nvme_process_aers(void *opaque)
+// {
+//     FemuCtrl *n = opaque;
+//     NvmeAsyncEvent *event, *next;
+
+//     //trace_pci_nvme_process_aers(n->aer_queued);
+
+//     QTAILQ_FOREACH_SAFE(event, &n->aer_queue, entry, next) {
+//         NvmeRequest *req;
+//         NvmeAerResult *result;
+
+//         /* can't post cqe if there is nothing to complete */
+//         if (!n->outstanding_aers) {
+//             //trace_pci_nvme_no_outstanding_aers();
+//             break;
+//         }
+
+//         /* ignore if masked (cqe posted, but event not cleared) */
+//         if (n->aer_mask & (1 << event->result.event_type)) {
+//             //trace_pci_nvme_aer_masked(event->result.event_type, n->aer_mask);
+//             continue;
+//         }
+
+//         QTAILQ_REMOVE(&n->aer_queue, event, entry);
+//         n->aer_queued--;
+
+//         n->aer_mask |= 1 << event->result.event_type;
+//         n->outstanding_aers--;
+
+//         req = n->aer_reqs[n->outstanding_aers];
+
+//         result = (NvmeAerResult *) &req->cqe.result;
+//         result->event_type = event->result.event_type;
+//         result->event_info = event->result.event_info;
+//         result->log_page = event->result.log_page;
+//         g_free(event);
+
+//         // trace_pci_nvme_aer_post_cqe(result->event_type, result->event_info,
+//         //                             result->log_page);
+
+//         // nvme_enqueue_req_completion(&n->admin_cq, req);
+
+//         // while (!(nvme_sq_empty(sq))) {
+//         // if (sq->phys_contig) {
+//         //     addr = sq->dma_addr + sq->head * n->sqe_size;
+//         // } else {
+//         //     addr = nvme_discontig(sq->prp_list, sq->head, n->page_size,
+//         //             n->sqe_size);
+//         // }
+//         // nvme_addr_read(n, addr, (void *)&cmd, sizeof(cmd));
+//         // nvme_inc_sq_head(sq);
+
+//         // memset(&cqe, 0, sizeof(cqe));
+
+//         // status = nvme_admin_cmd(n, &cmd, &cqe);
+//         // cqe.cid = cmd.cid;
+//         // cqe.status = cpu_to_le16(status << 1 | cq->phase);
+//         // cqe.sq_id = cpu_to_le16(sq->sqid);
+//         // cqe.sq_head = cpu_to_le16(sq->head);
+
+//         // if (cq->phys_contig) {
+//         //     addr = cq->dma_addr + cq->tail * n->cqe_size;
+//         // } else {
+//         //     addr = nvme_discontig(cq->prp_list, cq->tail, n->page_size, n->cqe_size);
+//         // }
+//         // nvme_addr_write(n, addr, (void *)&cqe, sizeof(cqe));
+//         // nvme_inc_cq_tail(cq);
+//         // nvme_isr_notify_admin(cq);
+//         // }
+
+//     }
+// }
+// //static uint16_t nvme_aer(FemuCtrl *n, NvmeRequest *req)
+// static uint16_t nvme_aer(FemuCtrl *n, NvmeCmd *req)
+// {
+//     //trace_pci_nvme_aer(nvme_cid(req));
+
+//     if (n->outstanding_aers > n->params.aerl) {
+//         //trace_pci_nvme_aer_aerl_exceeded();
+//         return NVME_AER_LIMIT_EXCEEDED;
+//     }
+
+//     n->aer_reqs[n->outstanding_aers] = req;
+//     n->outstanding_aers++;
+
+//     if (!QTAILQ_EMPTY(&n->aer_queue)) {
+//         nvme_process_aers(n);
+//     }
+
+//     return NVME_NO_COMPLETE;
+// }
+
 
 static uint16_t nvme_fw_log_info(FemuCtrl *n, NvmeCmd *cmd, uint32_t buf_len)
 {
@@ -1063,14 +1156,18 @@ static uint16_t nvme_fdp_stats(FemuCtrl *n, uint32_t endgrpid, uint32_t buf_len,
     uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
 
     if (off >= sizeof(NvmeFdpStatsLog)) {
+        femu_err("  nvme_fdp_stats offset is bigger than sizeof(NvmeFdpStatsLog !\n");
         return NVME_INVALID_FIELD | NVME_DNR;
     }
 
     if (endgrpid != 1 || !n->subsys) {
+        femu_err("  nvme_fdp_stats endgrp or subsys is not enabled! (endgrpid != 1 || !n->subsys)\n");
         return NVME_INVALID_FIELD | NVME_DNR;
     }
 
     if (!n->subsys->endgrp.fdp.enabled) {
+        femu_err("  nvme_fdp_stats flexible data placement support is not enabled! (!n->subsys->endgrp.fdp.enabled)\n");
+
         return NVME_FDP_DISABLED | NVME_DNR;
     }
 
@@ -1200,6 +1297,7 @@ static uint16_t nvme_get_log(FemuCtrl *n, NvmeCmd *cmd)
         femu_log("NVME_LOG_ENDGRP here\n");
         return nvme_endgrp_info(n, rae, len, off, cmd);
     case NVME_LOG_FDP_CONFS:
+        //NVMe-cli  sudo nvme fdp configs -e 1 /dev/nvme0n1
         femu_log("NVME_LOG_FDP_CONFS here\n");
         return nvme_fdp_confs(n, lspi, len, off, cmd);
     case NVME_LOG_FDP_RUH_USAGE:
@@ -1212,6 +1310,7 @@ static uint16_t nvme_get_log(FemuCtrl *n, NvmeCmd *cmd)
         femu_log("NVME_LOG_FDP_EVENTS here\n");
         return nvme_fdp_events(n, lspi, len, off, cmd);
     default:
+        femu_log("nvme_get_log default action here (opc:%d )\n", cmd->opcode);
         if (n->ext_ops.get_log) {
             return n->ext_ops.get_log(n, cmd);
         }
@@ -1390,34 +1489,38 @@ static uint16_t nvme_admin_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
                 n->lpg_wr_lat_ns, n->blk_er_lat_ns, n->chnl_pg_xfer_lat_ns);
         return NVME_SUCCESS;
     case NVME_ADM_CMD_DELETE_SQ:
-        femu_debug("admin cmd,del_sq\n");
+        femu_debug("\tNVME_ADM_CMD_DELETE_SQ %d\n", cmd->opcode);
         return nvme_del_sq(n, cmd);
     case NVME_ADM_CMD_CREATE_SQ:
-        femu_debug("admin cmd,create_sq\n");
+        femu_debug("\tNVME_ADM_CMD_CREATE_SQ %d\n", cmd->opcode);
         return nvme_create_sq(n, cmd);
     case NVME_ADM_CMD_DELETE_CQ:
-        femu_debug("admin cmd,del_cq\n");
+        femu_debug("\tNVME_ADM_CMD_DELETE_CQ %d\n", cmd->opcode);
         return nvme_del_cq(n, cmd);
     case NVME_ADM_CMD_CREATE_CQ:
-        femu_debug("admin cmd,create_cq\n");
+        femu_debug("\tNVME_ADM_CMD_CREATE_CQ %d\n", cmd->opcode);
         return nvme_create_cq(n, cmd);
     case NVME_ADM_CMD_IDENTIFY:
-        femu_debug("admin cmd,identify\n");
+        femu_debug("\tNVME_ADM_CMD_IDENTIFY %d\n", cmd->opcode);
         return nvme_identify(n, cmd);
     case NVME_ADM_CMD_SET_FEATURES:
-        femu_debug("admin cmd,set_feature\n");
+        femu_debug("\tNVME_ADM_CMD_SET_FEATURES %d\n", cmd->opcode);
         return nvme_set_feature(n, cmd, cqe);
     case NVME_ADM_CMD_GET_FEATURES:
-        femu_debug("admin cmd,get_feature\n");
+        femu_debug("\tNVME_ADM_CMD_GET_FEATURES %d\n", cmd->opcode);
         return nvme_get_feature(n, cmd, cqe);
+    case NVME_ADM_CMD_ASYNC_EV_REQ:
+        femu_debug("\t\tNVME_ADM_CMD_ASYNC_EV_REQ %d\n", cmd->opcode);
+        return NVME_SUCCESS;
+        //return nvme_aer(n, cmd);
     case NVME_ADM_CMD_GET_LOG_PAGE:
-        femu_debug("admin cmd,get_log_page\n");
+        femu_debug("\tNVME_ADM_CMD_GET_LOG_PAGE %d\n", cmd->opcode);
         return nvme_get_log(n, cmd);
     case NVME_ADM_CMD_ABORT:
-        femu_debug("admin cmd,abort\n");
+        femu_debug("\tNVME_ADM_CMD_ABORT %d\n", cmd->opcode);
         return nvme_abort_req(n, cmd, &cqe->n.result);
     case NVME_ADM_CMD_FORMAT_NVM:
-        femu_debug("admin cmd,format_nvm\n");
+        femu_debug("\tNVME_ADM_CMD_FORMAT_NVM %d\n", cmd->opcode);
         if (NVME_OACS_FORMAT & n->oacs) {
             return nvme_format(n, cmd);
         }
@@ -1432,7 +1535,7 @@ static uint16_t nvme_admin_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
         return NVME_INVALID_OPCODE | NVME_DNR;
     default:
         if (n->ext_ops.admin_cmd) {
-            femu_debug("    admin default; n->ext_ops.admin_cmd \n");
+            femu_debug("    admin default; n->ext_ops.admin_cmd %d \n", cmd->opcode);
             return n->ext_ops.admin_cmd(n, cmd);
         }
 
@@ -1474,7 +1577,6 @@ void nvme_process_sq_admin(void *opaque)
         } else {
             addr = nvme_discontig(cq->prp_list, cq->tail, n->page_size, n->cqe_size);
         }
-        //femu_debug("        qemu-nvme nvme_process_sq_admin nvme_addr_write(n, addr, (void *)&cqe, sizeof(cqe));  \n");
         nvme_addr_write(n, addr, (void *)&cqe, sizeof(cqe));
         nvme_inc_cq_tail(cq);
         nvme_isr_notify_admin(cq);

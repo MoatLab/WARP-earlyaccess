@@ -792,7 +792,7 @@ static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req)
         return nvme_io_mgmt_recv(n, req);
     default:
         if (n->ext_ops.io_cmd) {
-            femu_debug("nvme_io_cmd : n->ext_ops.io_cmd \n");
+            femu_debug("    nvme_io_cmd : n->ext_ops.io_cmd \n");
             return n->ext_ops.io_cmd(n, ns, cmd, req);
         }
 

@@ -4508,31 +4508,34 @@ static uint16_t nvme_io_cmd(NvmeCtrl *n, NvmeRequest *req)
     case NVME_CMD_ZONE_APPEND:
         return nvme_zone_append(n, req);
     case NVME_CMD_WRITE:
-        femu_log("NVME_CMD_WRITE here\n");
+        femu_debug("NVME_CMD_WRITE opc : %d \n",req->cmd.opcode);
         return nvme_write(n, req);
     case NVME_CMD_READ:
-        femu_log("NVME_CMD_READ here\n");
+        femu_debug("NVME_CMD_READ opc : %d \n",req->cmd.opcode);
         return nvme_read(n, req);
     case NVME_CMD_COMPARE:
+        femu_debug("NVME_CMD_COMPARE opc : %d \n",req->cmd.opcode);
         return nvme_compare(n, req);
     case NVME_CMD_DSM:
+        femu_debug("NVME_CMD_DSM opc : %d \n",req->cmd.opcode);
         return nvme_dsm(n, req);
     case NVME_CMD_VERIFY:
+        femu_debug("NVME_CMD_VERIFY opc : %d \n",req->cmd.opcode);
         return nvme_verify(n, req);
     case NVME_CMD_COPY:
-        femu_log("NVME_CMD_COPY here\n");
+        femu_debug("NVME_CMD_COPY opc : %d \n",req->cmd.opcode);
         return nvme_copy(n, req);
     case NVME_CMD_ZONE_MGMT_SEND:
-        femu_log("NVME_CMD_ZONE_MGMT_SEND here\n");
+        femu_debug("NVME_CMD_ZONE_MGMT_SEND opc : %d \n",req->cmd.opcode);
         return nvme_zone_mgmt_send(n, req);
     case NVME_CMD_ZONE_MGMT_RECV:
-        femu_log("NVME_CMD_ZONE_MGMT_RECV here\n");
+        femu_debug("NVME_CMD_ZONE_MGMT_RECV opc : %d \n",req->cmd.opcode);
         return nvme_zone_mgmt_recv(n, req);
     case NVME_CMD_IO_MGMT_RECV:
-        femu_log("NVME_CMD_IO_MGMT_RECV here\n");
+        femu_debug("NVME_CMD_IO_MGMT_RECV opc : %d \n",req->cmd.opcode);
         return nvme_io_mgmt_recv(n, req);
     case NVME_CMD_IO_MGMT_SEND:
-        femu_log("NVME_CMD_IO_MGMT_SEND here\n");
+        femu_debug("NVME_CMD_IO_MGMT_SEND opc : %d \n",req->cmd.opcode);
         return nvme_io_mgmt_send(n, req);
     default:
         assert(false);
@@ -5756,36 +5759,52 @@ static uint16_t nvme_identify(NvmeCtrl *n, NvmeRequest *req)
 
     switch (c->cns) {
     case NVME_ID_CNS_NS:
+        femu_debug("\t\t NVME_ID_CNS_NS opc : %d \n",req->cmd.opcode);
         return nvme_identify_ns(n, req, true);
     case NVME_ID_CNS_NS_PRESENT:
+        femu_debug("\t\t NVME_ID_CNS_NS_PRESENT opc : %d \n",req->cmd.opcode);
         return nvme_identify_ns(n, req, false);
     case NVME_ID_CNS_NS_ATTACHED_CTRL_LIST:
+        femu_debug("\t\t NVME_ID_CNS_NS_ATTACHED_CTRL_LIST opc : %d \n",req->cmd.opcode);
         return nvme_identify_ctrl_list(n, req, true);
     case NVME_ID_CNS_CTRL_LIST:
+        femu_debug("\t\t NVME_ID_CNS_CTRL_LIST opc : %d \n",req->cmd.opcode);
         return nvme_identify_ctrl_list(n, req, false);
     case NVME_ID_CNS_PRIMARY_CTRL_CAP:
+        femu_debug("\t\t NVME_ID_CNS_PRIMARY_CTRL_CAP opc : %d \n",req->cmd.opcode);
         return nvme_identify_pri_ctrl_cap(n, req);
     case NVME_ID_CNS_SECONDARY_CTRL_LIST:
+        femu_debug("\t\t NVME_ID_CNS_SECONDARY_CTRL_LIST opc : %d \n",req->cmd.opcode); 
         return nvme_identify_sec_ctrl_list(n, req);
     case NVME_ID_CNS_CS_NS:
+        femu_debug("\t\t NVME_ID_CNS_CS_NS opc : %d \n",req->cmd.opcode);
         return nvme_identify_ns_csi(n, req, true);
     case NVME_ID_CNS_CS_NS_PRESENT:
+        femu_debug("\t\t NVME_ID_CNS_CS_NS_PRESENT opc : %d \n",req->cmd.opcode);
         return nvme_identify_ns_csi(n, req, false);
     case NVME_ID_CNS_CTRL:
+        femu_debug("\t\t NVME_ID_CNS_CTRL opc : %d \n",req->cmd.opcode);
         return nvme_identify_ctrl(n, req);
     case NVME_ID_CNS_CS_CTRL:
+        femu_debug("\t\t NVME_ID_CNS_CS_CTRL opc : %d \n",req->cmd.opcode);
         return nvme_identify_ctrl_csi(n, req);
     case NVME_ID_CNS_NS_ACTIVE_LIST:
+        femu_debug("\t\t NVME_ID_CNS_NS_ACTIVE_LIST opc : %d \n",req->cmd.opcode);
         return nvme_identify_nslist(n, req, true);
     case NVME_ID_CNS_NS_PRESENT_LIST:
+        femu_debug("\t\t NVME_ID_CNS_NS_PRESENT_LIST opc : %d \n",req->cmd.opcode);
         return nvme_identify_nslist(n, req, false);
     case NVME_ID_CNS_CS_NS_ACTIVE_LIST:
+        femu_debug("\t\t NVME_ID_CNS_CS_NS_ACTIVE_LIST opc : %d \n",req->cmd.opcode);
         return nvme_identify_nslist_csi(n, req, true);
     case NVME_ID_CNS_CS_NS_PRESENT_LIST:
+        femu_debug("\t\t NVME_ID_CNS_CS_NS_PRESENT_LIST opc : %d \n",req->cmd.opcode);
         return nvme_identify_nslist_csi(n, req, false);
     case NVME_ID_CNS_NS_DESCR_LIST:
+        femu_debug("\t\t NVME_ID_CNS_NS_DESCR_LIST opc : %d \n",req->cmd.opcode);
         return nvme_identify_ns_descr_list(n, req);
     case NVME_ID_CNS_IO_COMMAND_SET:
+        femu_debug("\t\t NVME_ID_CNS_IO_COMMAND_SET opc : %d \n",req->cmd.opcode);
         return nvme_identify_cmd_set(n, req);
     default:
         trace_pci_nvme_err_invalid_identify_cns(le32_to_cpu(c->cns));
@@ -6980,6 +6999,7 @@ static uint16_t nvme_admin_cmd(NvmeCtrl *n, NvmeRequest *req)
                              nvme_adm_opc_str(req->cmd.opcode));
 
     if (!(nvme_cse_acs[req->cmd.opcode] & NVME_CMD_EFF_CSUPP)) {
+        femu_log("nvme_err_invalid_admin_opc : %d \n", req->cmd.opcode);
         trace_pci_nvme_err_invalid_admin_opc(req->cmd.opcode);
         return NVME_INVALID_OPCODE | NVME_DNR;
     }
@@ -6995,36 +7015,52 @@ static uint16_t nvme_admin_cmd(NvmeCtrl *n, NvmeRequest *req)
 
     switch (req->cmd.opcode) {
     case NVME_ADM_CMD_DELETE_SQ:
+        femu_debug("\tNVME_ADM_CMD_DELETE_SQ : %d \n", req->cmd.opcode);
         return nvme_del_sq(n, req);
     case NVME_ADM_CMD_CREATE_SQ:
+        femu_debug("\tNVME_ADM_CMD_CREATE_SQ : %d \n", req->cmd.opcode);
         return nvme_create_sq(n, req);
     case NVME_ADM_CMD_GET_LOG_PAGE:
+        femu_debug("\tNVME_ADM_CMD_GET_LOG_PAGE : %d \n", req->cmd.opcode);
         return nvme_get_log(n, req);
     case NVME_ADM_CMD_DELETE_CQ:
+        femu_debug("\tNVME_ADM_CMD_DELETE_CQ : %d \n", req->cmd.opcode);
         return nvme_del_cq(n, req);
     case NVME_ADM_CMD_CREATE_CQ:
+        femu_debug("\tNVME_ADM_CMD_CREATE_CQ : %d \n", req->cmd.opcode);
         return nvme_create_cq(n, req);
     case NVME_ADM_CMD_IDENTIFY:
+        femu_debug("\tNVME_ADM_CMD_IDENTIFY : %d \n", req->cmd.opcode);
         return nvme_identify(n, req);
     case NVME_ADM_CMD_ABORT:
+        femu_debug("\tNVME_ADM_CMD_ABORT : %d \n", req->cmd.opcode);
         return nvme_abort(n, req);
     case NVME_ADM_CMD_SET_FEATURES:
+        femu_debug("\tNVME_ADM_CMD_SET_FEATURES : %d \n", req->cmd.opcode);
         return nvme_set_feature(n, req);
     case NVME_ADM_CMD_GET_FEATURES:
+        femu_debug("\tNVME_ADM_CMD_GET_FEATURES : %d \n", req->cmd.opcode);
         return nvme_get_feature(n, req);
     case NVME_ADM_CMD_ASYNC_EV_REQ:
+        femu_debug("\tNVME_ADM_CMD_ASYNC_EV_REQ : %d \n", req->cmd.opcode);
         return nvme_aer(n, req);
     case NVME_ADM_CMD_NS_ATTACHMENT:
+        femu_debug("\tNVME_ADM_CMD_NS_ATTACHMENT : %d \n", req->cmd.opcode);
         return nvme_ns_attachment(n, req);
     case NVME_ADM_CMD_VIRT_MNGMT:
+        femu_debug("\tNVME_ADM_CMD_VIRT_MNGMT : %d \n", req->cmd.opcode);
         return nvme_virt_mngmt(n, req);
     case NVME_ADM_CMD_DBBUF_CONFIG:
+        femu_debug("\tNVME_ADM_CMD_DBBUF_CONFIG : %d \n", req->cmd.opcode);
         return nvme_dbbuf_config(n, req);
     case NVME_ADM_CMD_FORMAT_NVM:
+        femu_debug("\tNVME_ADM_CMD_FORMAT_NVM : %d \n", req->cmd.opcode);
         return nvme_format(n, req);
     case NVME_ADM_CMD_DIRECTIVE_SEND:
+        femu_debug("\tNVME_ADM_CMD_DIRECTIVE_SEND : %d \n", req->cmd.opcode);
         return nvme_directive_send(n, req);
     case NVME_ADM_CMD_DIRECTIVE_RECV:
+        femu_debug("\tNVME_ADM_CMD_DIRECTIVE_RECV : %d \n", req->cmd.opcode);
         return nvme_directive_receive(n, req);
     default:
         assert(false);
@@ -7071,7 +7107,7 @@ static void nvme_process_sq(void *opaque)
 
     while (!(nvme_sq_empty(sq) || QTAILQ_EMPTY(&sq->req_list))) {
         addr = sq->dma_addr + sq->head * n->sqe_size;
-        femu_log("nvme_process_sq (addr 0x%lx)  \n",addr);
+        //femu_log("nvme_process_sq (addr 0x%lx)  \n",addr);
         if (nvme_addr_read(n, addr, (void *)&cmd, sizeof(cmd))) {
             trace_pci_nvme_err_addr_read(addr);
             trace_pci_nvme_err_cfs();
@@ -7667,7 +7703,7 @@ static void nvme_process_db(NvmeCtrl *n, hwaddr addr, int val)
                        " offset=0x%"PRIx64", ignoring", addr);
         return;
     }
-    femu_log("nvme_process_db (addr 0x%lx, data 0x%x)  \n", addr, val);
+    //femu_log("nvme_process_db (addr 0x%lx, data 0x%x)  \n", addr, val);
     if (((addr - 0x1000) >> 2) & 1) {
         /* Completion queue doorbell write */
         femu_log("     Completion queue doorbell write (addr 0x%lx, data 0x%x)  \n", addr, val);

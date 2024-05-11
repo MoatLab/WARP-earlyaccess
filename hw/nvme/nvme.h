@@ -37,10 +37,13 @@
     do { fprintf(stderr, "[QEMU] Log: " fmt, ## __VA_ARGS__); } while (0)
 
 #define FEMU_DEBUG
-//#ifdef FEMU_DEBUG
+#ifdef FEMU_DEBUG
 #define femu_debug(fmt, ...)\
     do {fprintf(stderr, "[QEMU] debug : " fmt, ## __VA_ARGS__); } while (0)
-
+#else
+#define femu_debug(fmt, ...)\
+    do { } while (0)
+#endif
 //#endif
 QEMU_BUILD_BUG_ON(NVME_MAX_NAMESPACES > NVME_NSID_BROADCAST - 1);
 

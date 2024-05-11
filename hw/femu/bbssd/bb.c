@@ -103,9 +103,36 @@ static uint16_t bb_io_cmd(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
 
 static uint16_t bb_admin_cmd(FemuCtrl *n, NvmeCmd *cmd)
 {
+
+    // fdp_log("   typedef struct NvmeCmd {\n");
+    // fdp_log("       uint8_t    opcode       %d\n", cmd->opcode);
+    // fdp_log("       uint8_t     flags       %d\n", cmd->flags);
+    // fdp_log("       uint16_t    cid         %d\n", cmd->cid);
+    // fdp_log("       uint32_t    nsid        %u\n", cmd->nsid);
+    // fdp_log("       uint64_t    res2        %lu\n",cmd->res2);
+    // fdp_log("       uint64_t    mptr        %lu\n",cmd->mptr);
+    // fdp_log("       NvmeCmdDptr dptr            \n");
+    // fdp_log("           uint64_t    prp1        %lu\n", cmd->dptr.prp1);
+    // fdp_log("           uint64_t    prp2        %lu\n",cmd->dptr.prp2);
+    // fdp_log("           NvmeSglDescriptor sgl           \n");
+    // fdp_log("                   uint64_t addr           %lu\n",cmd->dptr.sgl.addr);
+    // fdp_log("                   uint32_t len            %u\n",cmd->dptr.sgl.len);
+    // fdp_log("                   uint8_t  rsvd[3]        %d %d %d\n",cmd->dptr.sgl.rsvd[0],cmd->dptr.sgl.rsvd[1],cmd->dptr.sgl.rsvd[2]);
+    // fdp_log("                   uint8_t  type           %d\n",cmd->dptr.sgl.type);  
+    // fdp_log("       uint32_t    cdw10       %u\n",cmd->cdw10);
+    // fdp_log("       uint32_t    cdw11       %u\n",cmd->cdw11);
+    // fdp_log("       uint32_t    cdw12       %u\n",cmd->cdw12);
+    // fdp_log("       uint32_t    cdw13       %u\n",cmd->cdw13);
+    // fdp_log("       uint32_t    cdw14       %u\n",cmd->cdw14);
+    // fdp_log("       uint32_t    cdw15       %u\n",cmd->cdw15);
+
     switch (cmd->opcode) {
     case NVME_ADM_CMD_FEMU_FLIP:
         bb_flip(n, cmd);
+        return NVME_SUCCESS;
+    case NVME_ADM_CMD_ASYNC_EV_REQ:
+        femu_debug("\t\tNVME_ADM_CMD_ASYNC_EV_REQ %d\n", cmd->opcode);
+        //return nvme_aer(n, req);
         return NVME_SUCCESS;
     default:
         return NVME_INVALID_OPCODE | NVME_DNR;
@@ -126,4 +153,3 @@ int nvme_register_bbssd(FemuCtrl *n)
 
     return 0;
 }
-
