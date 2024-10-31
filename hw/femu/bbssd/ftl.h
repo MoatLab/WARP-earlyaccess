@@ -270,7 +270,6 @@ typedef struct FemuReclaimGroup{
     int tt_nru;
     struct ru_mgmt *ru_mgmt;
 
-
 }FemuReclaimGroup;
 
 typedef struct FemuReclaimUnit{
@@ -325,6 +324,7 @@ struct ssd {
     FemuRuHandle *ruhs;
     uint64_t nruhs;
     
+    FemuCtrl *n;
 };
 
 void ssd_init(FemuCtrl *n);

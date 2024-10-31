@@ -6,16 +6,6 @@
 
 #endif
 static void *ftl_thread(void *arg);
-// static inline uint64_t ru_mapping(struct ssd *ssd, uint64_t slba){
-//     uint64_t slpn = slba;
-//     uint64_t nchnls= ssd->sp.nch;
-//     uint64_t ndies = ssd->sp.luns_per_ch;
-//     uint64_t nplanes=ssd->sp.pls_per_lun;
-//     /* 1. RU usually mapped as a superblock */
-
-//     /* 2. If there are multiple RG, RG isolated as a Die */
-
-// }
 static inline bool _should_gc_fdp_style(struct ssd *ssd, uint16_t rgidx)
 {
     return (ssd->rg[rgidx].ru_mgmt->free_ru_cnt <= ssd->rg[rgidx].ru_mgmt->gc_thres_rus);
@@ -581,7 +571,7 @@ static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n)
 {
     spp->secsz = n->bb_params.secsz;             // 512
     spp->secs_per_pg = n->bb_params.secs_per_pg; // 8
-    spp->pgs_per_blk = n->bb_params.pgs_per_blk; // 256
+    spp->pgs_per_blk = n->bb_params.pgs_per_blk; // 256 4K * 256 = 1M
     spp->blks_per_pl = n->bb_params.blks_per_pl; /* 256 16GB */
     spp->pls_per_lun = n->bb_params.pls_per_lun; // 1
     spp->luns_per_ch = n->bb_params.luns_per_ch; // 8
@@ -901,7 +891,7 @@ void ssd_init(FemuCtrl *n)
 {
     struct ssd *ssd = n->ssd;
     struct ssdparams *spp = &ssd->sp;
-
+    ssd->n = n;
     ftl_assert(ssd);
 
     ssd_init_params(spp, n);
@@ -1339,6 +1329,7 @@ static void gc_write_page_fdp_style(struct ssd *ssd, struct ppa *old_ppa, FemuRe
 
     }
 
+
     if (ssd->sp.enable_gc_delay)
     {
         struct nand_cmd gcw;
@@ -1403,7 +1394,7 @@ static void gc_write_page_fdp_style(struct ssd *ssd, struct ppa *old_ppa, FemuRe
 //     ftl_assert(get_blk(ssd, ppa)->vpc == cnt);
 // }
 /* here ppa identifies the block we want to clean */
-static void clean_one_block_fdp_style(struct ssd *ssd, struct ppa *ppa, FemuReclaimUnit *new_ru)
+static int clean_one_block_fdp_style(struct ssd *ssd, struct ppa *ppa, FemuReclaimUnit *new_ru)
 {
     struct ssdparams *spp = &ssd->sp;
     struct nand_page *pg_iter = NULL;
@@ -1425,11 +1416,13 @@ static void clean_one_block_fdp_style(struct ssd *ssd, struct ppa *ppa, FemuRecl
             }
             gc_write_page_fdp_style(ssd, ppa, new_ru);
             cnt++;
+            
         }
     }
 
     ftl_assert(get_blk(ssd, ppa)->vpc == cnt);
     //ftl_log(" \tRET clean_one_block_fdp_style\n");
+    return cnt;
 }
 // static void mark_line_free(struct ssd *ssd, struct ppa *ppa)
 // {
@@ -1564,7 +1557,8 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     struct nand_lun *lunp;
     struct ppa ppa;
     int ch, lun;
-
+    int vpc_cnt=0;
+    int cnt=0;
     // TODO
     //  issue 1. We lose pointer to old RU after gc. We lose ruh->curr_ru and ruh->rus[rgid] because the pointer is not changed to valid copy ru
     //  issue 2. About new ru, after gc, new ru that have valid copy doesn't know whether it has valid data or not.
@@ -1636,7 +1630,8 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
                 ppa.g.lun = lun;
                 ppa.g.pl = 0;
                 lunp = get_lun(ssd, &ppa);
-                clean_one_block_fdp_style(ssd, &ppa, new_ru);
+                vpc_cnt += clean_one_block_fdp_style(ssd, &ppa, new_ru);
+                cnt+=1;
                 mark_block_free(ssd, &ppa);
                 //ftl_debug("");
                 if (spp->enable_gc_delay)
@@ -1648,15 +1643,19 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
                     ssd_advance_status(ssd, &ppa, &gce);
                 }
                 lunp->gc_endtime = lunp->next_lun_avail_time;
+                
+
             }
         }
         // update line status
         // Note. if we want dynamic ru sizing, we should use this feature to make sure we have different free ru and line pool.
         //      Now, ru size is static; mark_line_free(ssd, &ppa);
     }
+    nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbmw, (uint64_t) ( vpc_cnt * ((spp->secsz * spp->secs_per_pg)/1024)) / 1024 );
+    nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbe, (uint64_t) (cnt * ((spp->secsz * spp->secs_per_pg)/1024) * spp->pgs_per_blk)/1024 );
     //mark_line_free(ssd, &ppa); //free line in mark ru free
     mark_ru_free(ssd, rgid, victim_ru);
-    ftl_debug( "\n Background ++ : rg->free_ru_cnt %lu lm->free_line_cnt %d \n", ssd->rg[rgid].ru_mgmt->free_ru_cnt, ssd->lm.free_line_cnt);
+    ftl_debug( "\n Background ++ : rg->free_ru_cnt %lu lm->free_line_cnt %d  vpc_cnt %d  %d M \n", ssd->rg[rgid].ru_mgmt->free_ru_cnt, ssd->lm.free_line_cnt, vpc_cnt, ( vpc_cnt * ((spp->secsz * spp->secs_per_pg)/1024)) / 1024 );
 
     return 0;
 }
