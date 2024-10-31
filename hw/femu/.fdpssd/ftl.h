@@ -163,7 +163,6 @@ struct ssdparams {
 
 
     int lines_per_ru;
-    int total_ru_cnt;
 };
 
 typedef struct line {
@@ -173,9 +172,6 @@ typedef struct line {
     QTAILQ_ENTRY(line) entry; /* in either {free,victim,full} list */
     /* position in the priority queue for victim lines */
     size_t                  pos;
-#ifdef SSD_STREAM_WRITE
-    FemuReclaimUnit *my_ru;
-#endif
 } line;
 
 /* wp: record next write addr */
@@ -235,7 +231,7 @@ struct nand_cmd {
         int full_super_cnt;
     }super_mgmt;
     #endif
-//Deceprecate this?
+
 typedef struct rg_mgmt{
     FemuReclaimGroup * rgs;
 
@@ -249,7 +245,7 @@ typedef struct ru_mgmt{
     pqueue_t *victim_ru_pq;
 
     //QTAILQ_HEAD(victim_line_list, line) victim_line_list;
-    QTAILQ_HEAD(full_ru_list, FemuReclaimUnit) full_ru_list;
+    QTAILQ_HEAD(full_ru_list, FemuReclaimUnit) full_ru_list;    //Shared OP
     uint64_t tt_rus;
     uint64_t free_ru_cnt;
     int victim_ru_cnt_type_init;
@@ -267,7 +263,7 @@ typedef struct FemuReclaimGroup{
 
     //FemuRuHandle *ruhs;
     FemuReclaimUnit *rus;
-    int tt_nru;
+    uint64_t tt_nru;
     struct ru_mgmt *ru_mgmt;
 
 
@@ -284,7 +280,6 @@ typedef struct FemuReclaimUnit{
     int vpc;
     int pri;
     int pos;
-    int ipc;
     int n_lines;
     int next_line_index;
 
@@ -346,7 +341,7 @@ void ssd_init(FemuCtrl *n);
 #define FEMU_FDP_DEBUG
 #ifdef FEMU_FDP_DEBUG
 #define fdp_log(fmt, ...) \
-    do { fprintf(stderr, "[FEMU] FDP-Log: " fmt, ## __VA_ARGS__); } while (0)
+    do { printf("[FEMU] FDP-Log: " fmt, ## __VA_ARGS__); } while (0)
 #else
 #define fdp_log(fmt, ...) \
     do { } while (0)

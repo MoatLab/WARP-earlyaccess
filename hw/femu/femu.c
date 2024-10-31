@@ -3,7 +3,7 @@
 #include "./nvme.h"
 
 #define NVME_SPEC_VER (0x00010400)
-#define NVME_DEFAULT_RU_SIZE (256 * MiB)
+#define NVME_DEFAULT_RU_SIZE (64 * MiB)
 
 
 static void nvme_clear_ctrl(FemuCtrl *n, bool shutdown)
@@ -627,7 +627,8 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
 {
     NvmeEnduranceGroup *endgrp = &subsys->endgrp;
     uint64_t tt_nru = subsys->params.fdp.nru; 
-
+    uint16_t ruhid = 0;
+    
     if (!subsys->params.fdp.runs) {
         error_setg(errp, "fdp.runs must be non-zero");
         return false;
@@ -678,7 +679,7 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
 
     endgrp->fdp.ruhs = g_new(NvmeRuHandle, endgrp->fdp.nruh);
 
-    for (uint16_t ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
+    for (ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
         endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
             .ruht = NVME_RUHT_INITIALLY_ISOLATED,
             .ruha = NVME_RUHA_UNUSED,
@@ -811,7 +812,7 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
             for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
                 for(uint16_t i = 0; i < tt_nru; i++){
                     endgrp->fdp.rus[rg][i].ruamw = ruh->ruamw;
-                    femu_err("          endgrp->fdp.rus[%d][%d].ruamw %lu \n" , rg, i,endgrp->fdp.rus[rg][i].ruamw);
+                    femu_log("          endgrp->fdp.rus[%d][%d].ruamw %lu \n" , rg, i,endgrp->fdp.rus[rg][i].ruamw);
                 }
             }
             // for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
@@ -1089,7 +1090,6 @@ static void nvme_init_ctrl(FemuCtrl *n)
                 // AUDIT sprintf(filename0, "write_log.csv");
                 //fp = fopen(filename0, "w");
                 //fprintf(fp, "test write\n");
-                //fprintf(fp, "start(s),\t\tend(s),\t\tstart(us),\t\tend(us),\t\ttime(s),\t\ttime(us),\t\tpid,\t\truhid,\t\tslba,\t\tnlb,\t\tru->ruamw,\t\truh_action\n");
                 //fclose(fp);
         }else{
             femu_log("FEMU NVMe : \"NVMe fdp disabled device!\" ctratt hex:%x \n",ctratt);

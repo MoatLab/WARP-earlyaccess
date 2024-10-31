@@ -134,4 +134,6 @@ trace-ust-all.c
 *.fd
 build-femu/
 build-femu/*
+hw/femu/fdpssd
+hw/femu/fdpssd/*
 .vscode/

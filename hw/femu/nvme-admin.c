@@ -578,6 +578,106 @@ static uint16_t nvme_identify_ns_descr_list(FemuCtrl *n, NvmeCmd *cmd)
 
     return dma_read_prp(n, list, sizeof(list), prp1, prp2);
 }
+/*
+static void nvme_do_flush(NvmeFlushAIOCB *iocb);
+
+static void nvme_flush_ns_cb(void *opaque, int ret)
+{
+    NvmeFlushAIOCB *iocb = opaque;
+    NvmeNamespace *ns = iocb->ns;
+
+    if (ret < 0) {
+        iocb->ret = ret;
+        goto out;
+    } else if (iocb->ret < 0) {
+        goto out;
+    }
+
+    if (ns) {
+        //trace_pci_nvme_flush_ns(iocb->nsid);
+
+        iocb->ns = NULL;
+        iocb->aiocb = blk_aio_flush(ns->blkconf.blk, nvme_flush_ns_cb, iocb);
+        return;
+    }
+
+out:
+    nvme_do_flush(iocb);
+}
+
+static void nvme_do_flush(NvmeFlushAIOCB *iocb)
+{
+    NvmeRequest *req = iocb->req;
+    //NvmeCtrl *n = nvme_ctrl(req);
+    FemuCtrl *n = req->ctrl; 
+    int i;
+
+    if (iocb->ret < 0) {
+        goto done;
+    }
+
+    if (iocb->broadcast) {
+        for (i = iocb->nsid + 1; i <= NVME_MAX_NAMESPACES; i++) {
+            iocb->ns = nvme_ns(n, i);
+            if (iocb->ns) {
+                iocb->nsid = i;
+                break;
+            }
+        }
+    }
+
+    if (!iocb->ns) {
+        goto done;
+    }
+
+    nvme_flush_ns_cb(iocb, 0);
+    return;
+
+done:
+    iocb->common.cb(iocb->common.opaque, iocb->ret);
+    qemu_aio_unref(iocb);
+}
+
+static uint16_t nvme_flush(NvmeCtrl *n, NvmeRequest *req)
+{
+    NvmeFlushAIOCB *iocb;
+    uint32_t nsid = le32_to_cpu(req->cmd.nsid);
+    uint16_t status;
+
+    iocb = qemu_aio_get(&nvme_flush_aiocb_info, NULL, nvme_misc_cb, req);
+
+    iocb->req = req;
+    iocb->ret = 0;
+    iocb->ns = NULL;
+    iocb->nsid = 0;
+    iocb->broadcast = (nsid == NVME_NSID_BROADCAST);
+
+    if (!iocb->broadcast) {
+        if (!nvme_nsid_valid(n, nsid)) {
+            status = NVME_INVALID_NSID | NVME_DNR;
+            goto out;
+        }
+
+        iocb->ns = nvme_ns(n, nsid);
+        if (!iocb->ns) {
+            status = NVME_INVALID_FIELD | NVME_DNR;
+            goto out;
+        }
+
+        iocb->nsid = nsid;
+    }
+
+    req->aiocb = &iocb->common;
+    nvme_do_flush(iocb);
+
+    return NVME_NO_COMPLETE;
+
+out:
+    qemu_aio_unref(iocb);
+
+    return status;
+}
+*/
 
 static uint16_t nvme_identify_cmd_set(FemuCtrl *n, NvmeCmd *cmd)
 {

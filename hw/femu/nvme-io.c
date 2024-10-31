@@ -192,6 +192,13 @@ static void nvme_process_cq_cpl(void *arg, int index_poller)
         if (now < req->expire_time) {
             break;
         }
+        if(req == NULL){
+            femu_debug(" req is NULL.  \n ");
+            assert(req!=NULL);
+        }
+        if(req->sq == NULL){
+            femu_debug(" req->opcode %d req->sq NULL\n", req->cmd.opcode );
+        }
 
         cq = n->cq[req->sq->sqid];
         if (!cq->is_active)
@@ -792,7 +799,6 @@ static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req)
         return nvme_io_mgmt_recv(n, req);
     default:
         if (n->ext_ops.io_cmd) {
-            femu_debug("    nvme_io_cmd : n->ext_ops.io_cmd \n");
             return n->ext_ops.io_cmd(n, ns, cmd, req);
         }
 
