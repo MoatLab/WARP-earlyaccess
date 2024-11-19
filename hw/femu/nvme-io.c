@@ -759,6 +759,25 @@ static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req)
 
     req->ns = ns = &n->namespaces[nsid - 1];
 
+
+    // femu_debug(" NvmeCmd \n ");
+    // femu_debug("\t opcode %d\n",cmd->opcode);
+    // femu_debug("\t flags %d\n",cmd->flags);
+    // femu_debug("\t cid %d\n",cmd->cid);
+    // femu_debug("\t nsid %d\n",cmd->nsid);
+    // femu_debug("\t res2 %ld\n",cmd->res2);
+    // femu_debug("\t mptr %ld\n",cmd->mptr);
+    // femu_debug("\t dptr \n");
+    // femu_debug("\t \t dptr.sgl.addr %ld \n", cmd->dptr.sgl.addr);
+    // femu_debug("\t \t dptr.sgl.len %d \n", cmd->dptr.sgl.len);
+    // femu_debug("\t cdw10 %d\n",cmd->cdw10);
+    // femu_debug("\t cdw11 %d\n",cmd->cdw11);
+    // femu_debug("\t cdw12 %d\n",cmd->cdw12);
+    // femu_debug("\t cdw13 %d\n",cmd->cdw13);
+    // femu_debug("\t cdw14 %d\n",cmd->cdw14);
+    // femu_debug("\t cdw15 %d\n",cmd->cdw15);
+
+
     switch (cmd->opcode) {
     case NVME_CMD_FLUSH:
         if (!n->id_ctrl.vwc || !n->features.volatile_wc) {

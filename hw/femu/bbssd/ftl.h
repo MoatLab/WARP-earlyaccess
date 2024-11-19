@@ -298,6 +298,7 @@ typedef struct FemuRuHandle{
     NvmeRuHandle *ruh;              //1. pointer to original reclaim unit handle
     FemuReclaimUnit **rus;           //2. List that this ruh have. I don't think this is necessary. 
     FemuReclaimUnit *curr_ru;       //3. Current wptr (RU).
+    FemuReclaimUnit *gc_ru;         //4. PI GC ru wptr
     struct ru_mgmt *ru_mgmt;
 }FemuRuHandle;
 

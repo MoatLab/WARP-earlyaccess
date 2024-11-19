@@ -2082,6 +2082,69 @@ uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba,
     // fclose(fp);
     return lat;
 }
+
+static void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t nlb){
+
+    struct ssd *ssd = n->ssd;
+    struct ssdparams *spp = &ssd->sp;
+    struct ppa ppa;
+    int ch, lun, bbk; 
+    struct nand_lun *lunp;
+    FemuReclaimUnit *v_ru=NULL;
+    FemuReclaimGroup *v_rg=ssd->rg;
+
+    //Prototype erase all blocks 
+    //struct nand_block *blk;
+    //uint64_t lba = slba;
+    //uint64_t start_lpn = lba / spp->secs_per_pg;
+    //uint64_t end_lpn = (lba + nlb - 1) / spp->secs_per_pg;
+    //uint64_t lpn;
+    //uint64_t start_blk_index ;
+    //uint64_t end_blk_index ; 
+
+    //FIXME : fix with lba range
+    for (ch = 0; ch < spp->nchs; ++ch)
+    {
+        for (lun = 0; lun < spp->luns_per_ch; ++lun)
+        {
+            for (bbk = 0; bbk < spp->blks_per_pl; ++bbk){
+                ppa.g.ch = ch;
+                ppa.g.lun = lun;
+                ppa.g.pl = 0;
+                ppa.g.blk = bbk;
+                lunp = get_lun(ssd, &ppa);
+                //ftl_err("FEMU lpn %ld \n", lpn);
+                mark_block_free(ssd, &ppa);        
+                
+                if (spp->enable_gc_delay)
+                {
+                    struct nand_cmd gce;
+                    gce.type = GC_IO;
+                    gce.cmd = NAND_ERASE;
+                    gce.stime = 0;
+                    ssd_advance_status(ssd, &ppa, &gce);
+                }
+
+                lunp->gc_endtime = lunp->next_lun_avail_time;
+            }
+        }
+    }
+    //nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbe, (uint64_t)(cnt * ((spp->secsz * spp->secs_per_pg)/1024) * spp->pgs_per_blk)/1024 );
+    //mark_line_free(ssd, &ppa); //free line in mark ru free
+    //loop till victim queue empty 
+    //      get first 
+    //      remove item
+    
+    //FIXME : fix when multi rg supoprt
+    while( (v_ru = pqueue_peek(v_rg->ru_mgmt->victim_ru_pq)) != NULL ){
+        pqueue_remove(v_rg->ru_mgmt->victim_ru_pq, v_ru);     //      remove item
+        v_rg->ru_mgmt->victim_ru_cnt--;
+        mark_ru_free(ssd, v_ru->rgidx, v_ru);                //      mark it free
+    }
+    femu_log("TRIM victim ru cnt : %d \n", v_rg->ru_mgmt->victim_ru_cnt );
+
+}
+
 static void *ftl_thread(void *arg)
 {
     FemuCtrl *n = (FemuCtrl *)arg;
@@ -2134,7 +2197,8 @@ static void *ftl_thread(void *arg)
                 lat = ssd_read(ssd, req);
                 break;
             case NVME_CMD_DSM:
-                lat = 0;
+                lat = 25000;
+                ssd_trim_fdp_style(n, req, req->slba, req->nlb);
                 break;
             default:
                 if (req->cmd.opcode == NVME_CMD_IO_MGMT_RECV)
