@@ -1,0 +1,15 @@
+[global]
+filename=/dev/ng5n1
+ioengine=io_uring_cmd
+cmd_type=nvme
+;fdp=1
+iodepth=4
+bs=128K
+
+[write-heavy]
+rw=randwrite
+numjobs=1
+;rwmixwrite=90
+;fdp_pli=0,1,2,3
+offset=0%
+size=20G

@@ -1651,8 +1651,8 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
         // Note. if we want dynamic ru sizing, we should use this feature to make sure we have different free ru and line pool.
         //      Now, ru size is static; mark_line_free(ssd, &ppa);
     }
-    nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbmw, (uint64_t) ( vpc_cnt * ((spp->secsz * spp->secs_per_pg)/1024)) / 1024 );
-    nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbe, (uint64_t) (cnt * ((spp->secsz * spp->secs_per_pg)/1024) * spp->pgs_per_blk)/1024 );
+    nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbmw, (uint64_t) ( vpc_cnt * spp->secsz * spp->secs_per_pg ));
+    nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbe, (uint64_t) (cnt * ((spp->secsz * spp->secs_per_pg)) * spp->pgs_per_blk));
     //mark_line_free(ssd, &ppa); //free line in mark ru free
     mark_ru_free(ssd, rgid, victim_ru);
     ftl_debug( "\n Background ++ : rg->free_ru_cnt %lu lm->free_line_cnt %d  vpc_cnt %d  %d M \n", ssd->rg[rgid].ru_mgmt->free_ru_cnt, ssd->lm.free_line_cnt, vpc_cnt, ( vpc_cnt * ((spp->secsz * spp->secs_per_pg)/1024)) / 1024 );
@@ -2028,8 +2028,9 @@ uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba,
 
     // nvme_do_write_fdp
     // Step4. Update RU info to the endgrp. (Fin)
-    nvme_fdp_stat_inc(&ns->endgrp->fdp.hbmw, data_size);
-    nvme_fdp_stat_inc(&ns->endgrp->fdp.mbmw, data_size);
+    //ftl_log("data size written : %ld  ns->lbaf.lbads %d\n", data_size,ns->lbaf.lbads);
+    nvme_fdp_stat_inc(&ns->endgrp->fdp.hbmw, data_size * ssd->sp.secsz );
+    nvme_fdp_stat_inc(&ns->endgrp->fdp.mbmw, data_size * ssd->sp.secsz );
 
     if (ru->ruamw == 0)
     {
@@ -2040,22 +2041,22 @@ uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba,
     {
         if (nlb < ru->ruamw)
         {
-#ifdef FDP_LOGGING
-            gettimeofday(&end, NULL);
-            //              1           2       3           4           5           6           7       8       9       10          11
-            fprintf(fp, "start(s)   end(s)  start(us)   end(us)     time(s)     time(us),   pid,    ruhid, slba,   nlb,    ru->ruamw, ruh_action\n");
-            fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t%u\n",
-                    start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,
-                    (end.tv_sec - start.tv_sec), (end.tv_usec - start.tv_usec),
-                    pid, ruhid, slba, nlb, ru->ruamw, 1);
-            // #endif
+        // #ifdef FDP_LOGGING
+        //             gettimeofday(&end, NULL);
+        //             //              1           2       3           4           5           6           7       8       9       10          11
+        //             fprintf(fp, "start(s)   end(s)  start(us)   end(us)     time(s)     time(us),   pid,    ruhid, slba,   nlb,    ru->ruamw, ruh_action\n");
+        //             fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t%u\n",
+        //                     start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,
+        //                     (end.tv_sec - start.tv_sec), (end.tv_usec - start.tv_usec),
+        //                     pid, ruhid, slba, nlb, ru->ruamw, 1);
+        //             // #endif
 
-            if (unlikely(ssd_stream_write(n, ssd, rg, ph, req) <= 0))
-            {
-                // write failed
-                ftl_err("ssd stream write fail with <=0 latency\n");
-            }
-#endif
+        //             if (unlikely(ssd_stream_write(n, ssd, rg, ph, req) <= 0))
+        //             {
+        //                 // write failed
+        //                 ftl_err("ssd stream write fail with <=0 latency\n");
+        //             }
+        // #endif
             ru->ruamw -= nlb;
 #ifdef SSD_STREAM_WRITE
             // data has written. latency model here
@@ -2067,15 +2068,14 @@ uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba,
 #endif
             break;
         }
-        ftl_log("Skipping ssd_stream_write in nvme_do_write_fdp:while (nlb : %u)\n ", nlb);
         nlb -= ru->ruamw;
-#ifdef FDP_LOGGING
-        gettimeofday(&end, NULL);
-        fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t\n",
-                start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,
-                (end.tv_sec - start.tv_sec), (end.tv_usec - start.tv_usec),
-                pid, ruhid, slba, nlb, ru->ruamw);
-#endif
+        // #ifdef FDP_LOGGING
+        //         gettimeofday(&end, NULL);
+        //         fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t\n",
+        //                 start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,
+        //                 (end.tv_sec - start.tv_sec), (end.tv_usec - start.tv_usec),
+        //                 pid, ruhid, slba, nlb, ru->ruamw);
+        // #endif
         nvme_update_ruh(n, ns, pid);
         break;
     }
@@ -2181,17 +2181,14 @@ static void *ftl_thread(void *arg)
             switch (req->cmd.opcode)
             {
             case NVME_CMD_WRITE:
-                /*
-                if(n->endgrp->fdp.enabled){
-                    ftl_debug("ftl_thread fdp_write ready \n");
-                    lat = nvme_do_write_fdp(n, req, req->slba, req->nlb);
-                }
-                else{
-                    lat = ssd_write(ssd, req);
-                }*/
-                // ftl_debug(" nvme_do_write_fdp(n,req, req->slba, req->nlb); \n");
                 lat = nvme_do_write_fdp(n, req, req->slba, req->nlb);
-                // lat = ssd_write(ssd, req);
+                // if(n->endgrp->fdp.enabled){
+                //     ftl_debug("ftl_thread fdp_write ready \n");
+                //     lat = nvme_do_write_fdp(n, req, req->slba, req->nlb);
+                // }
+                // else{
+                //     //lat = ssd_write(ssd, req);
+                // }
                 break;
             case NVME_CMD_READ:
                 lat = ssd_read(ssd, req);
