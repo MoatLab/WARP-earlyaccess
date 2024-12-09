@@ -1553,6 +1553,7 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     FemuRuHandle *ruh = &ssd->ruhs[ruhid];
     FemuReclaimUnit *victim_ru = NULL;
     FemuReclaimUnit *new_ru = NULL;
+    struct nand_block *blk_p= NULL;
     struct line *victim_line = NULL;
     struct nand_lun *lunp;
     struct ppa ppa;
@@ -1614,12 +1615,12 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     for (int i = 0; i < spp->lines_per_ru; ++i)
     {
         // OPT: need loop unrolling?
-        ftl_log("       spp->lines_per_ru %d victim_ru->lines[%d]\n", spp->lines_per_ru, i);
+        //ftl_log("       spp->lines_per_ru %d victim_ru->lines[%d]\n", spp->lines_per_ru, i);
         victim_line = victim_ru->lines[i];
         ppa.g.blk = victim_line->id;
-        ftl_log("GC-ing ch[%d]w[%d]line:%d, vpc=%d,ipc=%d,victim=%d,full=%d,free=%d\n", spp->nchs, spp->luns_per_ch, ppa.g.blk,
-                  victim_line->vpc, victim_line->ipc, ssd->lm.victim_line_cnt, ssd->lm.full_line_cnt,
-                  ssd->lm.free_line_cnt);
+        //ftl_log("GC-ing ch[%d]w[%d]line:%d, vpc=%d,ipc=%d,victim=%d,full=%d,free=%d\n", spp->nchs, spp->luns_per_ch, ppa.g.blk,
+        //          victim_line->vpc, victim_line->ipc, ssd->lm.victim_line_cnt, ssd->lm.full_line_cnt,
+        //          ssd->lm.free_line_cnt);
 
         // copy back valid data
         for (ch = 0; ch < spp->nchs; ++ch)
@@ -1630,10 +1631,16 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
                 ppa.g.lun = lun;
                 ppa.g.pl = 0;
                 lunp = get_lun(ssd, &ppa);
-                vpc_cnt += clean_one_block_fdp_style(ssd, &ppa, new_ru);
-                cnt+=1;
+                blk_p = get_blk(ssd,&ppa);
+                if( blk_p->vpc < spp->pgs_per_blk ){
+                    vpc_cnt += clean_one_block_fdp_style(ssd, &ppa, new_ru);
+                    cnt+=1;
+                }
+                else{
+                    //fdp_log("100p GC causing high waf \n");
+                    clean_one_block_fdp_style(ssd, &ppa, new_ru);
+                }
                 mark_block_free(ssd, &ppa);
-                //ftl_debug("");
                 if (spp->enable_gc_delay)
                 {
                     struct nand_cmd gce;
@@ -1643,19 +1650,16 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
                     ssd_advance_status(ssd, &ppa, &gce);
                 }
                 lunp->gc_endtime = lunp->next_lun_avail_time;
-                
 
             }
         }
         // update line status
-        // Note. if we want dynamic ru sizing, we should use this feature to make sure we have different free ru and line pool.
-        //      Now, ru size is static; mark_line_free(ssd, &ppa);
     }
     nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbmw, (uint64_t) ( vpc_cnt * spp->secsz * spp->secs_per_pg ));
     nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbe, (uint64_t) (cnt * ((spp->secsz * spp->secs_per_pg)) * spp->pgs_per_blk));
     //mark_line_free(ssd, &ppa); //free line in mark ru free
     mark_ru_free(ssd, rgid, victim_ru);
-    ftl_debug( "\n Background ++ : rg->free_ru_cnt %lu lm->free_line_cnt %d  vpc_cnt %d  %d M \n", ssd->rg[rgid].ru_mgmt->free_ru_cnt, ssd->lm.free_line_cnt, vpc_cnt, ( vpc_cnt * ((spp->secsz * spp->secs_per_pg)/1024)) / 1024 );
+    ftl_log( "\n Background ++ : rg->free_ru_cnt %lu lm->free_line_cnt %d  vpc_cnt %d  %d M \n", ssd->rg[rgid].ru_mgmt->free_ru_cnt, ssd->lm.free_line_cnt, vpc_cnt, ( vpc_cnt * ((spp->secsz * spp->secs_per_pg)/1024)) / 1024 );
 
     return 0;
 }

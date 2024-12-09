@@ -590,8 +590,7 @@ static inline int log_event(NvmeRuHandle *ruh, uint8_t event_type)
         //mbmw stands for mb of media written, which contains both write from the host and device itself
 
         //femu - call gc func here
-
-        nvme_fdp_stat_inc(&endgrp->fdp.mbmw, nvme_l2b(ns, ru->ruamw));//?
+        //nvme_fdp_stat_inc(&endgrp->fdp.mbmw, nvme_l2b(ns, ru->ruamw));//?
     }
 
     ru->ruamw = ruh->ruamw; //keep using different RU so the ru->ruamw is shifted or erased..
