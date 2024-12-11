@@ -1881,6 +1881,7 @@ typedef struct FemuCtrl {
     //Nvme endurance group and subsystem
     NvmeEnduranceGroup *endgrp;
     NvmeSubsystem   *subsys;
+    uint64_t        debug_req_cnt;
 
     uint32_t    conf_msix_qsize;
     uint32_t    conf_ioqpairs;

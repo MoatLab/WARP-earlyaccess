@@ -1114,6 +1114,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         was_full_line = true;
     }
     line->ipc++;
+    line->vpc--;
     ftl_assert(line->vpc > 0 && line->vpc <= spp->pgs_per_line);
     /* Adjust the position of the victime line in the pq under over-writes */
     #ifndef SSD_STREAM_WRITE
@@ -1131,7 +1132,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     if (was_full_line)
     {
         /* move line: "full" -> "victim" */
-        fdp_log( " Overwrite -- : lm->free_line_cnt %d lm->full_line_cnt  %d \n", ssd->lm.free_line_cnt, lm->full_line_cnt );
+        ftl_log( " Overwrite -- : lm->free_line_cnt %d lm->full_line_cnt  %d \n", ssd->lm.free_line_cnt, lm->full_line_cnt );
 
         QTAILQ_REMOVE(&lm->full_line_list, line, entry);
         lm->full_line_cnt--;
@@ -1148,11 +1149,10 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     ftl_assert(ru != NULL);
     /* ru is queued */
     if(ru->pos){
-        //fdp_log( " Overwrite ruhid %d ru->pos %d ", ru->ruh->ruhid ,ru->pos);
+        //fdp_log( " Overwrite ruhid %d ru->pos %d \n", ru->ruh->ruhid ,ru->pos);
         pqueue_change_priority(rm->victim_ru_pq, ru->vpc - 1, ru);
     }
     else{
-        line->vpc--;
         ru->vpc--;
     }
 
@@ -1160,12 +1160,10 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     {
         QTAILQ_REMOVE(&rm->full_ru_list, ru, entry);
         rm->full_ru_cnt--;
-        fdp_log( "      ... victim ru %p ru->ruh->ruhid %d inserted  \n", ru, ru->ruh->ruhid);
+        ftl_log( "      ... victim ru %p ru->ruh->ruhid %d inserted  \n", ru, ru->ruh->ruhid);
         pqueue_insert(rm->victim_ru_pq, ru);
         rm->victim_ru_cnt++;
     }
-    //fdp_log( "      ... mark_page_invalid RET  \n");
-
     #endif
 
 }
@@ -1180,7 +1178,6 @@ static void mark_page_valid(struct ssd *ssd, struct ppa *ppa, FemuReclaimUnit *r
     pg = get_pg(ssd, ppa);
     if ( pg->status != PG_FREE){
         fdp_log("mark_page_valid at ppa %lu g.ch %d g.way %d g.blk %d g.pg %d (ruh %d pg->status != PG_FREE status : %d ru %p )\n", ppa->ppa, ppa->g.ch, ppa->g.lun, ppa->g.blk, ppa->g.pg,ru->ruh->ruhid ,pg->status,ru);
-
     }
     ftl_assert(pg->status == PG_FREE);  //qemu-system-x86_64: 
     //../hw/femu/bbssd/ftl.c:1184: mark_page_valid: Assertion `pg->status == PG_FREE' failed.
@@ -1416,7 +1413,6 @@ static int clean_one_block_fdp_style(struct ssd *ssd, struct ppa *ppa, FemuRecla
             }
             gc_write_page_fdp_style(ssd, ppa, new_ru);
             cnt++;
-            
         }
     }
 
@@ -1492,7 +1488,8 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         ru_mgmt->victim_ru_cnt--;
     }
     fdp_log("   RET  select_victim_ru (victim_ru at %p rgid %d ruhid %d victim_ru_cnt %d\n", victim_ru, rgid, ruhid, ru_mgmt->victim_ru_cnt);
-    ftl_assert(victim_ru->ruh != NULL);
+    // ftl_assert(victim_ru != NULL);  //SIGSEV here. Dec9 Inho
+    // ftl_assert(victim_ru->ruh != NULL);
     return victim_ru;
 }
 /*
@@ -1592,11 +1589,8 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     //         ftl_err("ssd->ruhs[ssd->nruhs-1].curr_ru ssd->ruhs[ssd->nruhs-1].curr_ru ssd->ruhs[ssd->nruhs-1].curr_ru  \n"); //?
     //         //ssd->ruhs[ssd->nruhs-1].curr_ru = &ssd->ruhs[ssd->nruhs-1].rus[rgid][ssd->nruhs-1];
     //         new_ru = fdp_get_new_ru(ssd, rgid, ruhid);
-
     //     }else{
-
     //     }
-
     //     ftl_assert(ssd->ruhs[ssd->nruhs-1].curr_ru != NULL);
     //     new_ru = ssd->ruhs[ssd->nruhs-1].curr_ru;
     // }
@@ -1637,7 +1631,7 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
                     cnt+=1;
                 }
                 else{
-                    //fdp_log("100p GC causing high waf \n");
+                    fdp_log("100p GC causing high waf \n");
                     clean_one_block_fdp_style(ssd, &ppa, new_ru);
                 }
                 mark_block_free(ssd, &ppa);

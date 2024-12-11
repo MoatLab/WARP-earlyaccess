@@ -3,7 +3,7 @@
 #include "./nvme.h"
 
 #define NVME_SPEC_VER (0x00010400)
-#define NVME_DEFAULT_RU_SIZE (64 * MiB)
+#define NVME_DEFAULT_RU_SIZE (256 * MiB)
 
 
 static void nvme_clear_ctrl(FemuCtrl *n, bool shutdown)
