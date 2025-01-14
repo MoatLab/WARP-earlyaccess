@@ -796,6 +796,10 @@ static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req)
     case NVME_CMD_IO_MGMT_RECV:
         femu_debug(" nvme_io_cmd NVME_CMD_IO_MGMT_RECV\n");
         return nvme_io_mgmt_recv(n, req);
+    case NVME_CMD_IO_WAF_PER_RUH : 
+        femu_debug(" nvme_io_cmd NVME_CMD_IO_WAF_PER_RUH\n ");
+        return NVME_INVALID_OPCODE | NVME_DNR;
+        //;
     default:
         if (n->ext_ops.io_cmd) {
             return n->ext_ops.io_cmd(n, ns, cmd, req);

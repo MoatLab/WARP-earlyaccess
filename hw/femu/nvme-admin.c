@@ -1,5 +1,5 @@
 #include "./nvme.h"
-
+#include <math.h>
 #define NVME_IDENTIFY_DATA_SIZE 4096
 
 #if 0
@@ -1238,9 +1238,22 @@ static uint16_t nvme_fdp_ruh_usage(FemuCtrl *n, uint32_t endgrpid,
 
     ruh = endgrp->fdp.ruhs;
     hdr->nruh = cpu_to_le16(endgrp->fdp.nruh);
-
+    
     for (i = 0; i < endgrp->fdp.nruh; i++, ruhud++, ruh++) {
+        if(ruh->hbmw == 0 ){
+            ruh->waf = 1.0;
+        }else{
+            ruh->waf = ruh->mbmw / ruh->hbmw ;
+        }
         ruhud->ruha = ruh->ruha;
+        ruhud->hbmw = ruh->hbmw;
+        ruhud->mbmw = ruh->mbmw;
+
+        //ruhud->rsvd1[0] = (int)(floor(ruh->waf));
+        //femu_log(" Sending ruhud->rsvd1[0-1] %d.%d",ruhud->rsvd1[0],ruhud->rsvd1[1]);
+        //ruhud->rsvd1[1] = (int)((ruh->waf - (int)(floor(ruh->waf)))*100 );
+        //femu_log(".%d \n",ruhud->rsvd1[1]);
+
     }
     return dma_read_prp(n, (uint8_t *)buf + off, trans_len, prp1, prp2);
     //return nvme_c2h(n, (uint8_t *)buf + off, trans_len, req);

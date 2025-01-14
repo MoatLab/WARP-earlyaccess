@@ -136,6 +136,8 @@ enum NvmeRuhAttributes {
 typedef struct QEMU_PACKED NvmeRuhuDescr {
     uint8_t ruha;
     uint8_t rsvd1[7];
+    uint64_t hbmw;
+    uint64_t mbmw;
 } NvmeRuhuDescr;
 
 typedef struct QEMU_PACKED NvmeFdpStatsLog {
@@ -232,11 +234,16 @@ typedef struct NvmeRuHandle {
     uint64_t event_filter;
     uint8_t  lbafi;
     uint64_t ruamw;
-
+    float waf;
     /* reclaim units indexed by reclaim group */
     // I will use it as a wptr for now - FIX ME AFTER MULTI-RG SUPPORT 
     //NvmeReclaimUnit *rus;
     NvmeReclaimUnit **rus;
+    
+    uint64_t hbmw;  //local host mb written
+    uint64_t mbmw;  //local dev mb written
+    uint64_t mbe;
+
 } NvmeRuHandle;
 
 typedef struct NvmeEnduranceGroup {
@@ -726,6 +733,7 @@ enum NvmeIoCommands {
     NVME_CMD_VERIFY             = 0x0c,
     NVME_CMD_IO_MGMT_RECV       = 0x12,
     NVME_CMD_COPY               = 0x19,
+    NVME_CMD_IO_WAF_PER_RUH	    = 0x20,
     NVME_CMD_IO_MGMT_SEND       = 0x1d,
     NVME_CMD_ZONE_MGMT_SEND     = 0x79,
     NVME_CMD_ZONE_MGMT_RECV     = 0x7a,

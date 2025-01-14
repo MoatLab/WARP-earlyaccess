@@ -246,7 +246,8 @@ typedef struct ru_mgmt{
     QTAILQ_HEAD(free_ru_list, FemuReclaimUnit) free_ru_list;
     //pqueue_t *victim_ru_pq_type_init;    
     //pqueue_t *victim_ru_pq_type_permnt;
-    pqueue_t *victim_ru_pq;
+    //pqueue_t *victim_ru_pq_hot;
+    pqueue_t *victim_ru_pq; //cold
 
     //QTAILQ_HEAD(victim_line_list, line) victim_line_list;
     QTAILQ_HEAD(full_ru_list, FemuReclaimUnit) full_ru_list;
@@ -273,6 +274,7 @@ typedef struct FemuReclaimGroup{
 }FemuReclaimGroup;
 
 typedef struct FemuReclaimUnit{
+    uint16_t ruidx;
     uint16_t rgidx;
     NvmeReclaimUnit *ru;                
     FemuRuHandle *ruh;    
@@ -287,6 +289,15 @@ typedef struct FemuReclaimUnit{
     int n_lines;
     int next_line_index;
 
+    /* attributes for cost-benefit */
+    uint64_t last_init_time;    //an approximation for age. 
+    uint64_t last_invalidated_time;    //an approximation for age. 
+    float utilization;
+    int erase_cnt; 
+    float my_cb;
+    #define UTILIZATION(c,v) (v/c)  //#C: num pages( pgs_in_blk * nchnls * nways) V: valid page counts
+    #define CACL_COST_BENEFIT(u,time) ((1-u) * time)/(1+u) 
+    #define CACL_WRITE_COST(u) (2/(1-u))    //and do min heap
 }FemuReclaimUnit;
 
 typedef struct FemuRuHandle{
@@ -300,6 +311,11 @@ typedef struct FemuRuHandle{
     FemuReclaimUnit *curr_ru;       //3. Current wptr (RU).
     FemuReclaimUnit *gc_ru;         //4. PI GC ru wptr
     struct ru_mgmt *ru_mgmt;
+
+    uint64_t hbmw;
+    uint64_t mbmw;
+    uint64_t mbe;
+
 }FemuRuHandle;
 
 struct ssd {

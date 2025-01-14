@@ -151,7 +151,7 @@ void pqueue_change_priority(pqueue_t *q, pqueue_pri_t new_pri, void *d)
 
     q->setpri(d, new_pri);
     posn = q->getpos(d);
-    if (q->cmppri(old_pri, new_pri))
+    if (q->cmppri(old_pri, new_pri))    //old_pri > new_pri
         bubble_up(q, posn);
     else
         percolate_down(q, posn);
