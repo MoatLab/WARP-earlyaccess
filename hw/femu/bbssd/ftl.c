@@ -2190,22 +2190,6 @@ uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba,
     {
         if (nlb < ru->ruamw)
         {
-        // #ifdef FDP_LOGGING
-        //             gettimeofday(&end, NULL);
-        //             //              1           2       3           4           5           6           7       8       9       10          11
-        //             fprintf(fp, "start(s)   end(s)  start(us)   end(us)     time(s)     time(us),   pid,    ruhid, slba,   nlb,    ru->ruamw, ruh_action\n");
-        //             fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t%u\n",
-        //                     start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,
-        //                     (end.tv_sec - start.tv_sec), (end.tv_usec - start.tv_usec),
-        //                     pid, ruhid, slba, nlb, ru->ruamw, 1);
-        //             // #endif
-
-        //             if (unlikely(ssd_stream_write(n, ssd, rg, ph, req) <= 0))
-        //             {
-        //                 // write failed
-        //                 ftl_err("ssd stream write fail with <=0 latency\n");
-        //             }
-        // #endif
             ru->ruamw -= nlb;
 #ifdef SSD_STREAM_WRITE
             // data has written. latency model here
@@ -2218,13 +2202,6 @@ uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba,
             break;
         }
         nlb -= ru->ruamw;
-        // #ifdef FDP_LOGGING
-        //         gettimeofday(&end, NULL);
-        //         fprintf(fp, "%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%lu,\t\t%u,\t\t%u,\t\t%lu,\t\t%u,\t\t%lu,\t\t\n",
-        //                 start.tv_sec, end.tv_sec, start.tv_usec, end.tv_usec,
-        //                 (end.tv_sec - start.tv_sec), (end.tv_usec - start.tv_usec),
-        //                 pid, ruhid, slba, nlb, ru->ruamw);
-        // #endif
         nvme_update_ruh(n, ns, pid);
         break;
     }
@@ -2342,68 +2319,6 @@ static void *ftl_thread(void *arg)
             switch (req->cmd.opcode)
             {
             case NVME_CMD_WRITE:
-                // //Inho : Modified Nvme Cmd (Nvme1.3v) aligned with Nvme2.0v
-                // // typedef struct NvmeCmd {
-                // //     uint8_t    opcode; //: 8;
-                // //     /*
-                // //     uint16_t    fuse   : 2;
-                // //     uint16_t    res1   : 4;
-                // //     uint16_t    psdt   : 2;
-                // //     */
-                // //     uint8_t     flags;
-                // //     uint16_t    cid;
-                // //     uint32_t    nsid;
-                // //     uint64_t    res2;
-                // //     uint64_t    mptr;
-                // //     NvmeCmdDptr dptr;
-                // //     uint32_t    cdw10;
-                // //     uint32_t    cdw11;
-                // //     uint32_t    cdw12;
-                // //     uint32_t    cdw13;
-                // //     uint32_t    cdw14;
-                // //     uint32_t    cdw15;
-                // // } NvmeCmd;
-
-                // // typedef struct NvmeRequest {
-                // //     struct NvmeSQueue       *sq;
-                // //     struct NvmeCQueue       *cq;
-                // //     struct NvmeNamespace    *ns;
-                // //     uint16_t                status;
-                // //     uint64_t                slba;
-                // //     uint16_t                is_write;
-                // //     uint16_t                nlb;
-                // //     uint16_t                ctrl;
-                // //     uint64_t                meta_size;
-                // //     uint64_t                mptr;
-                // //     void                    *meta_buf;
-                // //     uint64_t                oc12_slba;
-                // //     uint64_t                *oc12_ppa_list;
-                // //     NvmeCmd                 cmd;
-                // //     NvmeCqe                 cqe;
-                // //     uint8_t                 cmd_opcode;
-                // //     QEMUSGList              qsg;
-                // //     QEMUIOVector            iov;
-                // //     NvmeSg                  sg;
-                // //     QTAILQ_ENTRY(NvmeRequest)entry;
-                // //     int64_t                 stime;
-                // //     int64_t                 reqlat;
-                // //     int64_t                 gcrt;
-                // //     int64_t                 expire_time;
-
-                // //     /* OC2.0: sector offset relative to slba where reads become invalid */
-                // //     uint64_t predef;
-
-                // //     /* ZNS */
-                // //     void                    *opaque;
-
-                // //     /* position in the priority queue for delay emulation */
-                // //     size_t                  pos;
-                // // } NvmeRequest;
-
-                // ftl_log("CMD opc %d flags %d cid %d nsid %d res2 %lu ", req->cmd.opcode, req->cmd.flags, req->cmd.cid, req->cmd.nsid, req->cmd.res2);
-                // ftl_log("cdw10 %d cdw11 %d cdw12 %d cdw13 %d cdw14 %d cdw15 %d\n", req->cmd.cdw10, req->cmd.cdw11, req->cmd.cdw12, req->cmd.cdw13, req->cmd.cdw14, req->cmd.cdw15);
-                // ftl_log("REQ status %d ctrl %d meta_size %lu expire_time %lu ", req->status, req->ctrl, req->meta_size, req->expire_time);
-
                 lat = nvme_do_write_fdp(n, req, req->slba, req->nlb);
                 // if(n->endgrp->fdp.enabled){
                 //     ftl_debug("ftl_thread fdp_write ready \n");
@@ -2427,7 +2342,8 @@ static void *ftl_thread(void *arg)
                 }
                 else
                 {
-                    ftl_err("FTL received unkown request type %d(0x%x), ERROR\n", req->cmd.opcode, req->cmd.opcode);    //[FEMU] FTL-Err: FTL received unkown request type 0(0x0), ERROR
+                    //BUG HERE [FEMU] FTL-Err: FTL received unkown request type 0(0x0), ERROR
+                    ftl_err("FTL received unkown request type %d(0x%x), ERROR\n", req->cmd.opcode, req->cmd.opcode);    
                 }
                 lat = 25000;
                 break;
@@ -2435,8 +2351,10 @@ static void *ftl_thread(void *arg)
 
             req->reqlat = lat;
             req->expire_time += lat;
-
-            rc = femu_ring_enqueue(ssd->to_poller[i], (void *)&req, 1); //Thread 9 "qemu-system-x86" received signal SIGSEGV, Segmentation fault.
+            
+            //BUG HERE Thread 9 "qemu-system-x86" received signal SIGSEGV, Segmentation fault.
+            rc = femu_ring_enqueue(ssd->to_poller[i], (void *)&req, 1); 
+            
             if (rc != 1)
             {
                 ftl_err("FTL to_poller enqueue failed\n");
@@ -2445,7 +2363,6 @@ static void *ftl_thread(void *arg)
             /* clean one line if needed (in the background) */
             if (!((rgidx = should_gc_fdp_style(ssd)) < 0))
             {
-                // do_gc(ssd, false);
                 //ftl_log("   FTL thread decide to do gc in FDP style. (should_gc_fdp_style(ssd) >= 0) \n");
                 if (ssd->nrg == 1)
                     do_gc_fdp_style(ssd, 0, 0, false);

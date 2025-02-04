@@ -305,7 +305,7 @@ uint16_t nvme_rw(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, NvmeRequest *req)
                                  data_size, meta_size);
     if (err)
         return err;
-
+    
     //if (nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, data_size, n)) {
     if (nvme_map_prp(n, &req->sg, prp1, prp2, data_size)){
         nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_INVALID_FIELD,
@@ -318,8 +318,8 @@ uint16_t nvme_rw(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, NvmeRequest *req)
     req->slba = slba;
     req->status = NVME_SUCCESS;
     req->nlb = nlb;
-
-    ret = backend_rw(n->mbe, &req->qsg, &data_offset, req->is_write);
+    //ret = backend_rw(n->mbe, &req->qsg, &data_offset, req->is_write); // deceprecated 
+    ret = backend_rw(n->mbe, &req->sg.qsg, &data_offset, req->is_write);
     if (!ret) {
         return NVME_SUCCESS;
     }
