@@ -566,7 +566,7 @@ uint16_t dma_read_prp(FemuCtrl *n, uint8_t *ptr, uint32_t len, uint64_t prp1,
     uint16_t status = NVME_SUCCESS;
 
     //if (nvme_map_prp(&qsg, &iov, prp1, prp2, len, n))
-    femu_log("  dma_read_prpr ; ");
+    //femu_debug("  dma_read_prpr ; ");
     if(nvme_map_prp(n, &sg, prp1,prp2, len))
     {
         return NVME_INVALID_FIELD | NVME_DNR;

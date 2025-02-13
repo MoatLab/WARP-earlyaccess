@@ -198,6 +198,7 @@ static void nvme_process_cq_cpl(void *arg, int index_poller)
         }
         if(req->sq == NULL){
             femu_debug(" req->opcode %d req->sq NULL\n", req->cmd.opcode );
+            assert(req->sq!=NULL);
         }
 
         cq = n->cq[req->sq->sqid];

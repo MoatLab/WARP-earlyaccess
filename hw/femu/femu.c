@@ -681,7 +681,8 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
 
     for (ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
         endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
-            .ruht = NVME_RUHT_INITIALLY_ISOLATED,
+            //.ruht = NVME_RUHT_INITIALLY_ISOLATED,
+            .ruht = NVME_RUHT_PERSISTENTLY_ISOLATED,
             .ruha = NVME_RUHA_UNUSED,
         };
         //Prev Anot : This means g_new statment inside the ruh initialization code is no longer valid.
@@ -936,7 +937,7 @@ static bool nvme_ns_init_fdp(NvmeNamespace *ns, Error **errp)
 
         switch (ruh->ruha) {
         case NVME_RUHA_UNUSED:
-            femu_log("      NVME_RUHA_UNUSED. set as ruh->ruha = NVME_RUHA_HOST;\n");
+            femu_log("      NVME_RUHA_UNUSED. set as ruh->ruha = NVME_RUHA_HOST ruht %d ;\n", ruh->ruht);
             ruh->ruha = NVME_RUHA_HOST;
             ruh->lbafi = lbafi;
             //ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.ds;

@@ -237,12 +237,24 @@ struct nand_cmd {
     #endif
 //Deceprecate this?
 typedef struct rg_mgmt{
+    int rgidx;
     FemuReclaimGroup * rgs;
-
     //FALL OUT
 }rg_mgmt;
 
+enum{
+    GC_GLOBAL_GREEDY = 0,
+    GC_GLOBAL_CB = 1, 
+    GC_SELECTIVE_RUH = 2,
+    GC_SELECTIVE_RUH_ADV = 3,
+    GC_SELECTIVE_MIDAS_OP = 4,
+};
+
 typedef struct ru_mgmt{
+
+    int mgmt_type;
+
+
     QTAILQ_HEAD(free_ru_list, FemuReclaimUnit) free_ru_list;
     //pqueue_t *victim_ru_pq_type_init;    
     //pqueue_t *victim_ru_pq_type_permnt;
@@ -267,6 +279,7 @@ typedef struct ru_mgmt{
 typedef struct FemuReclaimGroup{
 
     //FemuRuHandle *ruhs;
+    int rgidx;
     FemuReclaimUnit *rus;
     int tt_nru;
     struct ru_mgmt *ru_mgmt;
@@ -276,7 +289,7 @@ typedef struct FemuReclaimGroup{
 typedef struct FemuReclaimUnit{
     uint16_t ruidx;
     uint16_t rgidx;
-    NvmeReclaimUnit *ru;                
+    NvmeReclaimUnit *nvme_ru;                
     FemuRuHandle *ruh;    
     //struct write_pointer *wptr;
     struct write_pointer *ssd_wptr;

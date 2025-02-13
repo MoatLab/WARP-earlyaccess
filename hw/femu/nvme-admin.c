@@ -1182,10 +1182,14 @@ static uint16_t nvme_fdp_confs(FemuCtrl *n, uint32_t endgrpid, uint32_t buf_len,
         hdr->runs = cpu_to_le64(endgrp->fdp.runs);
 
         for (i = 0; i < nruh; i++) {
-            ruhd->ruht = NVME_RUHT_INITIALLY_ISOLATED;
+            //ruhd->ruht = NVME_RUHT_INITIALLY_ISOLATED;
+            ruhd->ruht = endgrp->fdp.ruhs->ruht;
             ruhd++;
         }
     } else {
+
+        femu_err("  UNSUPPORTED AREA for cylon FDP (nvme_fdp_confs():fdp disabled ) \n");
+
         /* 1 bit for RUH in PIF -> 2 RUHs max. */
         hdr->nrg = cpu_to_le16(1);
         hdr->nruh = cpu_to_le16(1);
@@ -1407,23 +1411,23 @@ static uint16_t nvme_get_log(FemuCtrl *n, NvmeCmd *cmd)
     case NVME_LOG_CMD_EFFECTS:
         return nvme_cmd_effects(n, cmd, csi, len, off);
      case NVME_LOG_ENDGRP:
-        femu_log("NVME_LOG_ENDGRP here\n");
+        femu_debug("NVME_LOG_ENDGRP here\n");
         return nvme_endgrp_info(n, rae, len, off, cmd);
     case NVME_LOG_FDP_CONFS:
         //NVMe-cli  sudo nvme fdp configs -e 1 /dev/nvme0n1
-        femu_log("NVME_LOG_FDP_CONFS here\n");
+        femu_debug("NVME_LOG_FDP_CONFS here\n");
         return nvme_fdp_confs(n, lspi, len, off, cmd);
     case NVME_LOG_FDP_RUH_USAGE:
-        femu_log("NVME_LOG_FDP_RUH_USAGE here\n");
+        femu_debug("NVME_LOG_FDP_RUH_USAGE here\n");
         return nvme_fdp_ruh_usage(n, lspi, dw10, dw12, len, off, cmd);
     case NVME_LOG_FDP_STATS:
-        femu_log("NVME_LOG_FDP_STATS here\n");
+        femu_debug("NVME_LOG_FDP_STATS here\n");
         return nvme_fdp_stats(n, lspi, len, off, cmd);
     case NVME_LOG_FDP_EVENTS:
-        femu_log("NVME_LOG_FDP_EVENTS here\n");
+        femu_debug("NVME_LOG_FDP_EVENTS here\n");
         return nvme_fdp_events(n, lspi, len, off, cmd);
     default:
-        femu_log("nvme_get_log default action here (opc:%d )\n", cmd->opcode);
+        femu_debug("nvme_get_log default action here (opc:%d )\n", cmd->opcode);
         if (n->ext_ops.get_log) {
             return n->ext_ops.get_log(n, cmd);
         }
