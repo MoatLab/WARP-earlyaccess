@@ -1920,6 +1920,7 @@ typedef struct FemuCtrl {
     uint8_t         femu_mode;
     uint8_t         lver; /* Coperd: OCSSD version, 0x1 -> OC1.2, 0x2 -> OC2.0 */
     uint32_t        memsz;
+    uint32_t        emsz_mb;
     OcCtrlParams    oc_params;
 
     Oc12Ctrl  *oc12_ctrl;

@@ -3,7 +3,7 @@
 #include "./nvme.h"
 
 #define NVME_SPEC_VER (0x00010400)
-#define NVME_DEFAULT_RU_SIZE (256 * MiB)
+#define NVME_DEFAULT_RU_SIZE (512 * MiB)
 
 
 static void nvme_clear_ctrl(FemuCtrl *n, bool shutdown)
@@ -681,8 +681,8 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
 
     for (ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
         endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
-            //.ruht = NVME_RUHT_INITIALLY_ISOLATED,
-            .ruht = NVME_RUHT_PERSISTENTLY_ISOLATED,
+            .ruht = NVME_RUHT_INITIALLY_ISOLATED,
+            //.ruht = NVME_RUHT_PERSISTENTLY_ISOLATED,
             .ruha = NVME_RUHA_UNUSED,
         };
         //Prev Anot : This means g_new statment inside the ruh initialization code is no longer valid.
@@ -1246,6 +1246,7 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
 {
     FemuCtrl *n = FEMU(pci_dev);
     int64_t bs_size;
+    //int64_t dram_size;
 
     nvme_check_size();
 
@@ -1254,8 +1255,9 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     }
 
     bs_size = ((int64_t)n->memsz) * 1024 * 1024;
-
+    //dram_size = ((int64_t)n->emsz_mb) * 1024 * 1024;
     init_dram_backend(&n->mbe, bs_size);
+    //init_dram_backend_scale (&n->mbe, dram_size,bs_size);
     n->mbe->femu_mode = n->femu_mode;
 
     n->completed = 0;
@@ -1337,6 +1339,7 @@ static void femu_exit(PCIDevice *pci_dev)
 static Property femu_props[] = {
     DEFINE_PROP_STRING("serial", FemuCtrl, serial),
     DEFINE_PROP_UINT32("devsz_mb", FemuCtrl, memsz, 1024), /* in MB */
+    DEFINE_PROP_UINT32("emsz_mb", FemuCtrl, emsz_mb, 1024), /* in MB */
     DEFINE_PROP_UINT32("namespaces", FemuCtrl, num_namespaces, 1),
     DEFINE_PROP_UINT32("queues", FemuCtrl, nr_io_queues, 8),
     DEFINE_PROP_UINT32("entries", FemuCtrl, max_q_ents, 0x7ff),

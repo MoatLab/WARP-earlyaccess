@@ -18,6 +18,29 @@ int init_dram_backend(SsdDramBackend **mbe, int64_t nbytes)
     return 0;
 }
 
+int init_dram_backend_scale(SsdDramBackend **mbe, int64_t nbytes_actual, int64_t nbytes_to_emulate)
+{
+    SsdDramBackend *b = *mbe = g_malloc0(sizeof(SsdDramBackend));
+
+    b->actual_size = nbytes_actual;
+    b->size = nbytes_to_emulate;
+    b->emulated_target_size = nbytes_to_emulate;
+    b->logical_space = g_malloc0(nbytes_actual);
+
+    if (mlock(b->logical_space, nbytes_actual) == -1) {
+        femu_err("Failed to pin the memory backend to the host DRAM\n");
+        g_free(b->logical_space);
+        abort();
+    }
+    // else{
+    //     femu_err("init_dram_backend_scale() test");
+    //     g_free(b->logical_space);
+    //     abort();
+    // }
+
+    return 0;
+}
+
 void free_dram_backend(SsdDramBackend *b)
 {
     if (b->logical_space) {
@@ -39,7 +62,7 @@ int backend_rw(SsdDramBackend *b, QEMUSGList *qsg, uint64_t *lbal, bool is_write
     if (is_write) {
         dir = DMA_DIRECTION_TO_DEVICE;
     }
-
+    //femu_log("[Scaler] backend_rw dma_memory_rw  base_addr %lu qsg->nsg %d\n", qsg->sg[0].base, qsg->nsg);
     while (sg_cur_index < qsg->nsg) {
         cur_addr = qsg->sg[sg_cur_index].base + sg_cur_byte;
         cur_len = qsg->sg[sg_cur_index].len - sg_cur_byte;
