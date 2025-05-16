@@ -149,8 +149,8 @@ static inline void victim_ru_set_pri(void *a, pqueue_pri_t pri)
 /* cost-benefit ? */
 static inline int victim_ru_cmp_pri_by_cb(pqueue_pri_t next, pqueue_pri_t curr)
 {
-    //next > curr //min heap, greedy
-    return (next > curr);   // next<curr  : max heap
+    //next > curr //min heap, greedy, cb 
+    return (next > curr);   // next<curr  
 }
 
 static inline pqueue_pri_t victim_ru_get_pri_by_cb(void *a)
@@ -368,6 +368,7 @@ static FemuReclaimUnit *get_next_free_ru(struct ssd *ssd, FemuReclaimGroup *rg)
         }
     }
     ru->last_init_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000; 
+    ru->chance_token = 3;
 
     return ru;
 }
@@ -858,15 +859,15 @@ static void femu_fdp_init_ru_mgmt(struct ssd *ssd, FemuReclaimGroup *rg)
     rm->victim_ru_cnt = 0;
     rm->full_ru_cnt = 0;
     QTAILQ_INIT(&rm->free_ru_list);
-    
-    // rm->victim_ru_pq = pqueue_init(rm->tt_rus, victim_ru_cmp_pri_by_cb,
-    //                                victim_ru_get_pri_by_cb, victim_ru_set_pri_by_cb,
-    //                                victim_ru_get_pos, victim_ru_set_pos);
+    QTAILQ_INIT(&rm->full_ru_list);
+
+    rm->victim_ru_cb = pqueue_init(rm->tt_rus, victim_ru_cmp_pri_by_cb,
+                                   victim_ru_get_pri_by_cb, victim_ru_set_pri_by_cb,
+                                   victim_ru_get_pos, victim_ru_set_pos);
         
     rm->victim_ru_pq = pqueue_init(rm->tt_rus, victim_ru_cmp_pri,
                                    victim_ru_get_pri, victim_ru_set_pri,
                                    victim_ru_get_pos, victim_ru_set_pos);
-    QTAILQ_INIT(&rm->full_ru_list);
 }
 static void _femu_fdp_init_ru_mgmt(struct ssd *ssd, struct ru_mgmt *init)
 {
@@ -878,14 +879,16 @@ static void _femu_fdp_init_ru_mgmt(struct ssd *ssd, struct ru_mgmt *init)
     rm->victim_ru_cnt = 0;
     rm->full_ru_cnt = 0;
     QTAILQ_INIT(&rm->free_ru_list);
+    QTAILQ_INIT(&rm->full_ru_list);
 
-    // rm->victim_ru_pq = pqueue_init(rm->tt_rus, victim_ru_cmp_pri_by_cb,
-    //                                victim_ru_get_pri_by_cb, victim_ru_set_pri_by_cb,
-    //                                victim_ru_get_pos, victim_ru_set_pos);
+    rm->victim_ru_cb = pqueue_init(rm->tt_rus, victim_ru_cmp_pri_by_cb,
+                                   victim_ru_get_pri_by_cb, victim_ru_set_pri_by_cb,
+                                   victim_ru_get_pos, victim_ru_set_pos);
+
     rm->victim_ru_pq = pqueue_init(rm->tt_rus, victim_ru_cmp_pri,
                                 victim_ru_get_pri, victim_ru_set_pri,
                                 victim_ru_get_pos, victim_ru_set_pos);
-    QTAILQ_INIT(&rm->full_ru_list);
+
 }
 static void femu_fdp_init_ssd_reclaim_unit(struct ssd *ssd, FemuReclaimUnit *femu_ru, int rgidx, int index)
 {
@@ -894,9 +897,12 @@ static void femu_fdp_init_ssd_reclaim_unit(struct ssd *ssd, FemuReclaimUnit *fem
     femu_ru->n_lines = spp->lines_per_ru;
     femu_ru->next_line_index = 1; // wpp for line in ru
     femu_ru->vpc = 0;
+    femu_ru->ipc = 0;
     femu_ru->ssd_wptr = (struct write_pointer *)g_malloc0(sizeof(struct write_pointer));
+    femu_ru->npages = spp->lines_per_ru * spp->pgs_per_line;
     //femu_ru->last_init_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000;;    //init when full & gc. 
     //femu_ru->last_invalidated_time = 0; //update when invalidated. init to 0 when gced
+
     wpp = femu_ru->ssd_wptr;
     femu_ru->lines = (struct line **)g_malloc0(femu_ru->n_lines * sizeof(struct line *));
     // femu_ru->ssd_wptr->curline = &lm->lines[(rgidx * lines_per_rg) + (index * lines_per_ru)];
@@ -914,6 +920,7 @@ static void femu_fdp_init_ssd_reclaim_unit(struct ssd *ssd, FemuReclaimUnit *fem
     wpp->pg = 0; // wpp->pg == spp->pgs_per_blk
     ftl_assert(wpp->curline->id == femu_ru->lines[0]->id);
     ftl_assert(wpp->blk == femu_ru->lines[0]->id);
+
     // ftl_log("   femu_ru wptr set up wpp->blk  %d\n", wpp->blk);
 }
 static void femu_fdp_ssd_init_reclaim_group(FemuCtrl *n, struct ssd *ssd)
@@ -1305,6 +1312,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
 
     }
     #endif
+
     #ifdef SSD_STREAM_WRITE
     struct ru_mgmt *rm = ssd->rg[0].ru_mgmt;
     FemuReclaimUnit *ru = line->my_ru;
@@ -1326,6 +1334,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     }
 
     /* Cost-benefit : ru is queued */
+
     //Cost = amount of data read and write. therefore, 1+u
     //Benefit = amount of data that can be restore * age. therefore, (1-u)*age
     //age = time elasped till last gc time, 
@@ -1333,11 +1342,13 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         // ru's last gc time |<----------------------------------------------->|  get_curr_time  => age
         //      ru's last gc time |<----------------------->|  get_curr_time  => age
         // get curr time whenever it's get invalidated. 
+
     //ru->vpc--;
     
     line->vpc--;
     ftl_assert(ru->vpc==line->vpc);
-    ru->utilization = ((float)ru->vpc / (float)(ru->vpc+ru->ipc)); 
+    ru->utilization = (float)((float)ru->vpc / (float)(ru->npages)); 
+    ru->last_invalidated_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);  //ms
 
     //ru->last_invalidated_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000;       //ms
     // if(ru->last_invalidated_time == 0)
@@ -1815,14 +1826,51 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
 {
 
     FemuReclaimUnit *victim_ru = NULL;
+    FemuReclaimUnit *r = NULL;
+    QTAILQ_HEAD(ru_list_temp, FemuReclaimUnit) ru_list_temp;
     struct ru_mgmt *ru_mgmt = ssd->rg[rgid].ru_mgmt;
     //ftl_err("   INSIDE  select_victim_ru\n");
-    ru_mgmt->mgmt_type = GC_GLOBAL_GREEDY;
+    //ru_mgmt->mgmt_type = GC_GLOBAL_GREEDY;
+    ru_mgmt->mgmt_type = GC_GLOBAL_CB;
+
     switch (ru_mgmt->mgmt_type)
     {
-    case GC_GLOBAL_GREEDY:
     case GC_GLOBAL_CB:
-        /* code */
+        /**
+         * @brief 
+         * for each victim ru in queue, update the cost-benefit in min heap order 
+         * now = qemu_clock_get_us(now)
+         * for each victim in queue
+         *      victim->my_cb = victim->utilization / ((1-victim->utilization) *  ) ;
+         */
+
+
+        uint64_t now = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+        QTAILQ_INIT(&ru_list_temp);
+        while(( r = (FemuReclaimUnit *) pqueue_pop(ru_mgmt->victim_ru_pq)) != NULL){
+            r->utilization = (float)r->vpc / (ssd->sp.pgs_per_line * ssd->sp.lines_per_ru);
+            r->my_cb = (float)CACL_COST_BENEFIT ( r->utilization , (now - r->last_invalidated_time) );
+            QTAILQ_INSERT_TAIL(&ru_list_temp, r, entry);
+            pqueue_insert( ru_mgmt->victim_ru_cb, r );
+        }
+        victim_ru = pqueue_pop(ru_mgmt->victim_ru_cb);
+        QTAILQ_REMOVE(&ru_list_temp, victim_ru, entry);
+
+        while( ( r = (FemuReclaimUnit *) pqueue_pop(ru_mgmt->victim_ru_cb)) != NULL ){
+            //r was 0x0
+            ftl_assert(r!=NULL);
+            pqueue_insert( ru_mgmt->victim_ru_pq , r );
+        }
+        ftl_assert(victim_ru!=NULL);
+        //ftl_assert( victim_ru->utilization != )
+        victim_ru->utilization = (float)victim_ru->vpc / (ssd->sp.pgs_per_line * ssd->sp.lines_per_ru);
+        float temp = (float)victim_ru->utilization/((1-victim_ru->utilization) * (now - victim_ru->last_invalidated_time));
+        ftl_log("GC_GLOBAL_CB RUH%d gc type %d vic_ru_cnt %d vic_ru cb %.2f (%.2f) v/t %d/%d util %.2f time %lu now %lu last %lu\n", ruhid, ru_mgmt->mgmt_type,ru_mgmt->victim_ru_cnt, victim_ru->my_cb, temp,victim_ru->vpc, ssd->sp.pgs_per_line,victim_ru->utilization, (now - victim_ru->last_invalidated_time) , now ,victim_ru->last_invalidated_time);
+
+        //QTAILQ_EMPTY(&ru_list_temp);
+        break;
+
+    case GC_GLOBAL_GREEDY:
         ru_mgmt = ssd->rg[rgid].ru_mgmt;
         //ftl_err("RUH%d is NVME_RUHT_PERSISTENTLY_ISOLATED gc type %d vic ru cnt %d\n", ruhid, ru_mgmt->mgmt_type,ru_mgmt->victim_ru_cnt );
         ftl_assert(ru_mgmt != NULL);
@@ -1833,9 +1881,99 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         ftl_assert(victim_ru != NULL);
         break;
     case GC_SELECTIVE_RUH : 
+    case GC_EXPLOIT_SEQUENTIAL : 
         //RUH select logic here
+        /**
+         * @brief 
+         * If there is a sequential stream among the workload, it will naturally generates low utilization block, leading low write amplification.
+         * The theory looks the same with greedy algorithm. The difference of this alogrithm is not selecting sequential stream at all. 
+         * Three information for RUH
+         *      1. RUH global wa    //ruh_mgmt->waf_score_global
+         *      2. RUH recent wa    //ruh_mgmt->waf_score_transitory
+         *      3. RUH global util  //ruh_mgmt->utilization (ruh_mgmt->vpc_total / (ru_in_use_cnt * pgs_per_ru ))
+         * If recent wa == 1.0 then likely this stream is sequential. Wait for this to invalidate itself.
+         * 
+         */
+        ru_mgmt = ssd->rg[rgid].ru_mgmt;
+        ftl_assert(ru_mgmt != NULL);
+        //victim_ru = select_victim_ru_from_ruh(ssd,rgid,ruhid);
+        victim_ru = pqueue_pop(ru_mgmt->victim_ru_pq);
+        int vic_ruh = victim_ru->ruh->ruhid;
+
+        struct ru_mgmt *ruh_mgmt = ssd->ruhs[vic_ruh].ru_mgmt;
+        //The high utilization + wa ~= 1.1  = define sequential 
+        //The higher utilization + lower wa >= 1.1 = likely sequential 
+        // wa >= 1.1 & ruh_mgmt->utilization lower than ~ 0.8  = likely the high waf ruh.
+        if (ru_mgmt->is_gc_triggered == false){
+            ru_mgmt->is_gc_triggered = true;
+            //goto return
+            //return victim_ru;
+
+        }else if(ru_mgmt->is_force_gc_triggered == false){
+            ru_mgmt->is_force_gc_triggered = true;
+            //goto return
+            //return victim_ru;
+
+        }else if(victim_ru->utilization <= 0.0 ){
+            //goto return
+            //return victim_ru;
+            ftl_assert(victim_ru->utilization <= 0.0);
+        }
+        else{
+            if ( ruh_mgmt->waf_score_global == 1.0 && ruh_mgmt->waf_score_transitory == 1.0){
+                //preserve_victim(victim_ru);
+                if( victim_ru->chance_token < 0 ){
+                    victim_ru->chance_token--;
+                    pqueue_insert( ru_mgmt->victim_ru_pq , victim_ru );
+                }else{
+                    //state changes to likely sequential
+                    //goto return
+                    //return victim_ru;
+                }
+
+
+            }else if(ruh_mgmt->waf_score_global < 1.1 ){
+            }
+
+            if(victim_ru != NULL){
+                ru_mgmt->victim_ru_cnt--;
+            }
+            ftl_assert(victim_ru != NULL);
+
+        }
+        break ;
+
+    case GC_SELECTIVE_RUH_SOCIAL_WELFARE : 
+        //RUH select logic here
+        /**
+         * @brief 
+         * A theory that a social walfare algorithm of distributing and selecting garbage collection .
+         * A limit can be 
+         *  1. Capacity limit of GC. When the SSD needs GC, pick RUH based on the limit that we set previously. (This set when there is first background GC) 
+         *  2. Sched based GC. If the certain RUH is too victimized, relax that. Simple algorithm such as two-chance; an algorithm that avoids consequent
+         *  3. Plus, this architecture allows to select victim ru within the RUH by it's own policy. Thus, based on the utilization that each RUH has, RUH can either perform CB-based or greedy based victim ru selection.  
+         */
+        //int ruh_cnt_in_used ;
+        //for ruh in ruhs_cnt_in_use:
+        //  expected_ru_in_use[ruhid] = ( ssd->ruhs[ruhid].ru_cnt_in_use * ssd->ruhs[ruhid]. )
+
+
         victim_ru = select_victim_ru_from_ruh(ssd,rgid,ruhid);
         break ;
+
+    case GC_BIT_POPULATION :
+        /**
+         * @brief 
+         * This schemes allows multi-ru selection that based on the BIT population among multiple RUHs, which is a posterior information.
+         * Let some algorithm such as a cost-benefit selects the victim ru. 
+         * Among other victim ru, select another victim that can be merged with the one picked at the first stage.
+         * Look at the average BIT time that the victim RU has. Lookup age queue. find similar one with less error rate. If there is no such vic ru, skip this. 
+         * This can be apporximate by the age detection.
+         */
+
+        
+        break;
+
     case GC_SELECTIVE_MIDAS_OP :
         ru_mgmt = ssd->ruhs[ruhid].ru_mgmt;
         if (ru_mgmt == NULL)

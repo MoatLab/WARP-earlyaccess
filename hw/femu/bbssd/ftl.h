@@ -248,6 +248,9 @@ enum{
     GC_SELECTIVE_RUH = 2,
     GC_SELECTIVE_RUH_ADV = 3,
     GC_SELECTIVE_MIDAS_OP = 4,
+    GC_SELECTIVE_RUH_SOCIAL_WELFARE =5,
+    GC_EXPLOIT_SEQUENTIAL = 6,
+    GC_BIT_POPULATION =7,
 };
 
 typedef struct ru_mgmt{
@@ -259,7 +262,8 @@ typedef struct ru_mgmt{
     //pqueue_t *victim_ru_pq_type_init;    
     //pqueue_t *victim_ru_pq_type_permnt;
     //pqueue_t *victim_ru_pq_hot;
-    pqueue_t *victim_ru_pq; //cold
+    pqueue_t *victim_ru_pq; 
+    pqueue_t *victim_ru_cb; 
 
     //QTAILQ_HEAD(victim_line_list, line) victim_line_list;
     QTAILQ_HEAD(full_ru_list, FemuReclaimUnit) full_ru_list;
@@ -274,6 +278,18 @@ typedef struct ru_mgmt{
 
     double gc_thres_pcent;
     double gc_thres_pcent_high;
+
+    //runtime value
+    bool is_gc_triggered;
+    bool is_force_gc_triggered;
+    float * list_waf_transitory;
+    int list_waf_transitory_len;
+    float waf_score_global;
+    float waf_score_transitory;
+
+    float utilization;
+
+
 }ru_mgmt;
 
 typedef struct FemuReclaimGroup{
@@ -301,15 +317,21 @@ typedef struct FemuReclaimUnit{
     int ipc;
     int n_lines;
     int next_line_index;
-
+    int npages;
+    int chance_token;
+    
     /* attributes for cost-benefit */
     uint64_t last_init_time;    //an approximation for age. 
     uint64_t last_invalidated_time;    //an approximation for age. 
     float utilization;
     int erase_cnt; 
     float my_cb;
+
+    //TODO discard these fields below
     #define UTILIZATION(c,v) (v/c)  //#C: num pages( pgs_in_blk * nchnls * nways) V: valid page counts
-    #define CACL_COST_BENEFIT(u,time) ((1-u) * time)/(1+u) 
+    //#define CACL_COST_BENEFIT(u,time) ((1-u) * time)/(1+u)    //  = benefit / cost (so MaxHeap)
+    #define CACL_COST_BENEFIT(u,time) 100000*u/((1-u) * time)          //  = cost/benefit (so MinHeap)
+    //   u / ( (1 - u) * (time) ) ;
     #define CACL_WRITE_COST(u) (2/(1-u))    //and do min heap
 }FemuReclaimUnit;
 
