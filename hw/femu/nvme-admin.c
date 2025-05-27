@@ -1403,12 +1403,16 @@ static uint16_t nvme_get_log(FemuCtrl *n, NvmeCmd *cmd)
 
     switch (lid) {
     case NVME_LOG_ERROR_INFO:
+        femu_debug("NVME_LOG_ERROR_INFO here\n");
         return nvme_error_log_info(n, cmd, len);
     case NVME_LOG_SMART_INFO:
+        femu_debug("NVME_LOG_SMART_INFO here\n");
         return nvme_smart_info(n, cmd, len);
     case NVME_LOG_FW_SLOT_INFO:
+        femu_debug("NVME_LOG_FW_SLOT_INFO here\n");
         return nvme_fw_log_info(n, cmd, len);
     case NVME_LOG_CMD_EFFECTS:
+        femu_debug("NVME_LOG_CMD_EFFECTS here\n");
         return nvme_cmd_effects(n, cmd, csi, len, off);
      case NVME_LOG_ENDGRP:
         femu_debug("NVME_LOG_ENDGRP here\n");

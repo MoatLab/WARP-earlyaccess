@@ -488,7 +488,7 @@ static FemuReclaimUnit *fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGroup
                         //ftl_assert(new_ru->ruh == ruh);
                         //ftl_assert(ruh->ruh->rus[rg->rgidx] == new_ru->nvme_ru);    
                         wpp = new_ru->ssd_wptr;
-                        ftl_debug("ruh %d - call new ru ( new_ru %d %p curr_ru %d at %p )\n", ruh->ruhid, new_ru->ruidx, new_ru, curr_ru->ruidx, curr_ru);
+                        ftl_debug("ruh %d - call new ru ( new_ru %d line id %d %p curr_ru %d at %p )\n", ruh->ruhid, new_ru->ruidx, new_ru->lines[0]->id, new_ru, curr_ru->ruidx, curr_ru);
                         // Assume fdp get new ru make ru->lines have free lines
 
                         if (wpp == NULL)
@@ -818,6 +818,7 @@ static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp)
     ch->next_ch_avail_time = 0;
     ch->busy = 0;
 }
+#ifdef CYLON_FDP_TRIM_ERASE_ALL
 
 static void ssd_reset_maptbl(struct ssd *ssd){
     struct ssdparams *spp = &ssd->sp;
@@ -827,6 +828,7 @@ static void ssd_reset_maptbl(struct ssd *ssd){
         ssd->rmap[i] = INVALID_LPN;    
     }
 }
+#endif
 
 static void ssd_init_maptbl(struct ssd *ssd)
 {
@@ -1256,7 +1258,7 @@ static struct ppa fdp_get_new_page(struct ssd *ssd, FemuReclaimUnit *ru)
     return ppa;
 }
 
-/* update SSD status about one page from PG_VALID -> PG_VALID */
+/* update SSD status about one page from PG_VALID -> PG_INVALID */
 static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
 {
     bool was_full_line = false;
@@ -1267,11 +1269,32 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
 
     /* update corresponding page status */
     pg = get_pg(ssd, ppa);
-    ftl_assert(pg->status == PG_VALID);
+    ftl_assert(pg != NULL);
+    
+    if (pg->status != PG_VALID ){
+        ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
+        //ftl_assert(pg->status == PG_VALID);
+        if (pg->status == PG_INVALID ||pg->status == PG_FREE )
+        {
+            //page already invalidated.
+            return;
+        }else {
+            ftl_assert(pg->status == PG_VALID);            //Can free page hit this?
+        }
+    }
+   
     pg->status = PG_INVALID;
 
     /* update corresponding block status */
     blk = get_blk(ssd, ppa);
+    ftl_assert(blk != NULL);
+    //iqemu-system-x86_64: ../hw/femu/bbssd/ftl.c:1286: : Assertion `blk->vpc > 0 && blk->vpc <= spp->pgs_per_blk' failed.
+    if( !(blk->ipc >= 0 && blk->ipc < spp->pgs_per_blk ) || !(blk->vpc > 0 && blk->vpc <= spp->pgs_per_blk)){
+        ftl_err("        ftl_assert!(blk->ipc %d >= 0 && blk->ipc < spp->pgs_per_blk %d);   \n", blk->ipc ,spp->pgs_per_blk);
+        ftl_err("        ftl_assert!(blk->vpc %d > 0 && blk->vpc <= spp->pgs_per_blk %d);   \n", blk->vpc ,spp->pgs_per_blk);
+
+    }
+
     ftl_assert(blk->ipc >= 0 && blk->ipc < spp->pgs_per_blk);
     blk->ipc++;
     ftl_assert(blk->vpc > 0 && blk->vpc <= spp->pgs_per_blk);
@@ -1679,6 +1702,12 @@ static int clean_one_block_fdp_style(struct ssd *ssd, struct ppa *ppa, FemuRecla
             cnt++;
         }
     }
+    if(get_blk(ssd, ppa)->vpc != cnt){
+        struct nand_block *blk = get_blk(ssd, ppa);
+        ftl_err("blk npgs %d ipc %d vpc %d  \n",blk->npgs, blk->ipc, blk->vpc);
+        ftl_err("\n");
+    }
+    //qemu-system-x86_64: ../hw/femu/bbssd/ftl.c:1698: clean_one_block_fdp_style: Assertion `get_blk(ssd, ppa)->vpc == cnt' failed.
 
     ftl_assert(get_blk(ssd, ppa)->vpc == cnt);
     //ftl_log(" \tRET clean_one_block_fdp_style\n");
@@ -1697,7 +1726,7 @@ static int clean_one_block_fdp_style(struct ssd *ssd, struct ppa *ppa, FemuRecla
 static void mark_ru_free(struct ssd *ssd, uint16_t rgid, FemuReclaimUnit *ru)
 {
     struct ssdparams *spp = &ssd->sp;
-    ftl_debug(" INSIDE mark_ru_free \n");
+    //ftl_debug(" INSIDE mark_ru_free \n");
     struct ru_mgmt *rm = ssd->rg[rgid].ru_mgmt;
     // Assume we dont use 'mark_line_free' (TODO check this wether correct or not)
     ftl_assert(ru != NULL);
@@ -1762,7 +1791,7 @@ static void mark_ru_free(struct ssd *ssd, uint16_t rgid, FemuReclaimUnit *ru)
     //I'm not sure about these codes at this moment ; inho
     ru->last_init_time =  qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000/1000;
     //ru->last_invalidated_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
-    ftl_debug("  mark_ru_free FIN\n");
+    //ftl_debug("  mark_ru_free FIN\n");
 
 }   
 // static void mark_ru_free_by_ruh(struct ssd *ssd, FemuRuHandle *ruh, FemuReclaimUnit *ru){
@@ -1865,7 +1894,7 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         //ftl_assert( victim_ru->utilization != )
         victim_ru->utilization = (float)victim_ru->vpc / (ssd->sp.pgs_per_line * ssd->sp.lines_per_ru);
         float temp = (float)victim_ru->utilization/((1-victim_ru->utilization) * (now - victim_ru->last_invalidated_time));
-        ftl_log("GC_GLOBAL_CB RUH%d gc type %d vic_ru_cnt %d vic_ru cb %.2f (%.2f) v/t %d/%d util %.2f time %lu now %lu last %lu\n", ruhid, ru_mgmt->mgmt_type,ru_mgmt->victim_ru_cnt, victim_ru->my_cb, temp,victim_ru->vpc, ssd->sp.pgs_per_line,victim_ru->utilization, (now - victim_ru->last_invalidated_time) , now ,victim_ru->last_invalidated_time);
+        ftl_log("GC_GLOBAL_CB RUH%d gc type %d id %d vic_ru_cnt %d vic_ru cb %.2f (%.2f) v/t %d/%d util %.2f time %lu now %lu last %lu\n", ruhid, ru_mgmt->mgmt_type, victim_ru->lines[0]->id, ru_mgmt->victim_ru_cnt, victim_ru->my_cb, temp,victim_ru->vpc, ssd->sp.pgs_per_line,victim_ru->utilization, (now - victim_ru->last_invalidated_time) , now ,victim_ru->last_invalidated_time);
 
         //QTAILQ_EMPTY(&ru_list_temp);
         break;
@@ -2113,7 +2142,7 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     }else{
         ftl_debug("[Forground GC]");
     }
-    ftl_debug( " FDP GC do_gc_fdp_style BEGIN : victim ru idx %d , %p rg->free_ru_cnt %lu lm->free_line_cnt %d \n",victim_ru->ruidx , victim_ru ,ssd->rg[rgid].ru_mgmt->free_ru_cnt, ssd->lm.free_line_cnt);
+    ftl_debug( " FDP GC do_gc_fdp_style BEGIN : victim ru idx %d line id %d, %p rg->free_ru_cnt %lu lm->free_line_cnt %d \n",victim_ru->ruidx, victim_ru->lines[0]->id, victim_ru ,ssd->rg[rgid].ru_mgmt->free_ru_cnt, ssd->lm.free_line_cnt);
 
     if (ruh->ruh_type == NVME_RUHT_INITIALLY_ISOLATED){
         if(ssd->ruhs[ssd->nruhs-1].curr_ru == NULL || ssd->ruhs[ssd->nruhs-1].rus[rgid] != NULL ){
@@ -2621,11 +2650,25 @@ uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba,
     return lat;
 }
 
-static void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t nlb){
+void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t nlb){
 
     struct ssd *ssd = n->ssd;
     struct ssdparams *spp = &ssd->sp;
     struct ppa ppa;
+    // erase only relevent blocks 
+    //struct nand_block *blk;
+    //struct nand_page *pg;
+    uint64_t lba = slba;
+    uint64_t start_lpn = lba / spp->secs_per_pg;
+    uint64_t end_lpn = (lba + nlb - 1) / spp->secs_per_pg;
+    uint64_t lpn;
+    uint64_t start_blk_index ;
+    uint64_t end_blk_index ; 
+
+    //Prototype erase all blocks 
+    //TODO FIXME : fix with lba range
+#ifdef CYLON_FDP_TRIM_ERASE_ALL
+    //#RESET ALL 
     int ch, lun, bbk; 
     struct nand_lun *lunp;
     NvmeEnduranceGroup *endgrp = &n->subsys->endgrp;
@@ -2633,15 +2676,6 @@ static void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uin
     FemuReclaimGroup *v_rg=ssd->rg;
     NvmeRuHandle *ruh;
 
-    //Prototype erase all blocks 
-    //struct nand_block *blk;
-    //uint64_t lba = slba;
-    //uint64_t start_lpn = lba / spp->secs_per_pg;
-    //uint64_t end_lpn = (lba + nlb - 1) / spp->secs_per_pg;
-    //uint64_t lpn;
-    //uint64_t start_blk_index ;
-    //uint64_t end_blk_index ; 
-    //TODO FIXME : fix with lba range
     for (ch = 0; ch < spp->nchs; ++ch)
     {
         for (lun = 0; lun < spp->luns_per_ch; ++lun)
@@ -2653,8 +2687,10 @@ static void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uin
                 ppa.g.blk = bbk;
                 lunp = get_lun(ssd, &ppa);
                 //ftl_err("FEMU lpn %ld \n", lpn);
+
                 mark_block_free(ssd, &ppa);        
                 
+
                 if (spp->enable_gc_delay)
                 {
                     struct nand_cmd gce;
@@ -2690,7 +2726,6 @@ static void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uin
         mark_ru_free(ssd, v_ru->rgidx, v_ru);                //      mark it free
     }
     //3. working (open) ru
-
     ruh = endgrp->fdp.ruhs;
     for (int i = 0; i < endgrp->fdp.nruh; i++, ruh++) {
         ruh->hbmw = 0;
@@ -2723,6 +2758,154 @@ static void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uin
     ssd->n->subsys->endgrp.fdp.hbmw = 0 ;
     ssd->n->subsys->endgrp.fdp.mbmw = 0 ;
     ssd->n->subsys->endgrp.fdp.mbe = 0 ;
+
+#else
+    //#DEFAULT
+    //for given LBA space, TRIM func should
+        //1. invalidate the ppa in blk struct
+        //2. Update ppa "invalid"
+        //3. Possibly have quick erase but now can leave it to GC 
+        //4. For FDP, make sure the corresponding RU should be enqued to vicim queue
+        //5. May decrease or increase FDP counter such as "available space" but leave it for now.
+
+    #ifdef FEMU_DEBUG_FTL
+    ppa = get_maptbl_ent(ssd, start_lpn);
+    start_blk_index = ppa.g.blk;
+    ppa = get_maptbl_ent(ssd, end_lpn);
+    end_blk_index = ppa.g.blk;
+
+    ftl_debug("req TRIM sbla %ld start lpn %ld nlb %d end lpn %ld start_blk id %ld end_blk id %ld flags %d %x cdw10 %d %x cd11 %d %x\n", slba, start_lpn, nlb, end_lpn, start_blk_index, end_blk_index,req->cmd.flags, req->cmd.flags,req->cmd.cdw10,req->cmd.cdw10,req->cmd.cdw11,req->cmd.cdw11 );
+
+    #endif
+
+
+    if (end_lpn >= spp->tt_pgs)
+    {
+
+        ftl_err("start_lpn=%ld end_lpn=%ld" PRIu64 ",tt_pgs=%d\n",start_lpn, end_lpn, ssd->sp.tt_pgs);
+        // end_lpn = spp->tt_pgs;
+
+        // int ch, lun, bbk; 
+        // struct nand_lun *lunp;
+        // NvmeEnduranceGroup *endgrp = &n->subsys->endgrp;
+        // FemuReclaimUnit *v_ru=NULL;
+        // FemuReclaimGroup *v_rg=ssd->rg;
+        // NvmeRuHandle *ruh;
+
+        // for (ch = 0; ch < spp->nchs; ++ch)
+        // {
+        //     for (lun = 0; lun < spp->luns_per_ch; ++lun)
+        //     {
+        //         for (bbk = 0; bbk < spp->blks_per_pl; ++bbk){
+        //             ppa.g.ch = ch;
+        //             ppa.g.lun = lun;
+        //             ppa.g.pl = 0;
+        //             ppa.g.blk = bbk;
+        //             lunp = get_lun(ssd, &ppa);
+        //             //ftl_err("FEMU lpn %ld \n", lpn);
+
+        //             mark_block_free(ssd, &ppa);        
+                    
+
+        //             if (spp->enable_gc_delay)
+        //             {
+        //                 struct nand_cmd gce;
+        //                 gce.type = GC_IO;
+        //                 gce.cmd = NAND_ERASE;
+        //                 gce.stime = 0;
+        //                 ssd_advance_status(ssd, &ppa, &gce);
+        //             }
+
+        //             lunp->gc_endtime = lunp->next_lun_avail_time;
+        //         }
+        //     }
+        // }
+        // //nvme_fdp_stat_inc(&ssd->n->subsys->endgrp.fdp.mbe, (uint64_t)(cnt * ((spp->secsz * spp->secs_per_pg)/1024) * spp->pgs_per_blk)/1024 );
+        // //mark_line_free(ssd, &ppa); //free line in mark ru free
+        // //loop till victim queue empty 
+        // //      get first 
+        // //      remove item
+        
+        // //FIXME : fix when multi rg supoprt
+        // //1. victim ru
+        // while( (v_ru = pqueue_peek(v_rg->ru_mgmt->victim_ru_pq)) != NULL ){
+        //     pqueue_remove(v_rg->ru_mgmt->victim_ru_pq, v_ru);     //      remove item
+        //     v_rg->ru_mgmt->victim_ru_cnt--;
+        //     mark_ru_free(ssd, v_ru->rgidx, v_ru);                //      mark it free
+        // }
+        // //2. full ru
+        // struct ru_mgmt *rm = v_rg->ru_mgmt;
+        // while( (v_ru = (FemuReclaimUnit *) QTAILQ_FIRST(&rm->full_ru_list) )!= NULL ){
+        //     QTAILQ_REMOVE(&rm->full_ru_list, v_ru, entry);
+        //     //pqueue_remove(v_rg->ru_mgmt->free_ru_list, v_ru);     //      remove item
+        //     v_rg->ru_mgmt->full_ru_cnt--;
+        //     mark_ru_free(ssd, v_ru->rgidx, v_ru);                //      mark it free
+        // }
+        // //3. working (open) ru
+        // ruh = endgrp->fdp.ruhs;
+        // for (int i = 0; i < endgrp->fdp.nruh; i++, ruh++) {
+        //     ruh->hbmw = 0;
+        //     ruh->mbmw = 0;
+        //     ruh->mbe = 0;
+        //     ssd->ruhs[i].hbmw = 0;
+        //     ssd->ruhs[i].mbmw = 0;
+        //     ssd->ruhs[i].mbe = 0;
+        //     if ( !( ssd->ruhs[i].curr_ru == NULL) ){
+        //         //reclaim 
+        //         mark_ru_free(ssd , ssd->ruhs[i].curr_ru->rgidx, ssd->ruhs[i].curr_ru);
+        //     }
+        //     if ( (ssd->ruhs[i].ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ) && ( ssd->ruhs[i].gc_ru != NULL )){
+        //         mark_ru_free(ssd , ssd->ruhs[i].gc_ru->rgidx, ssd->ruhs[i].gc_ru);
+        //         ssd->ruhs[i].gc_ru=NULL;
+        //     }
+        //     ssd->ruhs[i].curr_ru = NULL;
+        //     //ssd->ruhs[i].rus[]
+        //     ssd->ruhs[i].rus[v_rg->rgidx] = fdp_get_new_ru(ssd , v_rg->rgidx, ssd->ruhs[i].ruhid);
+        //     ssd->ruhs[i].ruh->rus[v_rg->rgidx] = ssd->ruhs[i].rus[v_rg->rgidx]->nvme_ru;
+        //     ssd->ruhs[i].curr_ru = ssd->ruhs[i].rus[v_rg->rgidx];
+            
+        //     ssd->ruhs[i].ruh->hbmw = 0 ;
+        //     ssd->ruhs[i].ruh->mbmw = 0 ;
+        //     ssd->ruhs[i].ruh->mbe = 0 ;
+        // }
+        // ssd_reset_maptbl(ssd);
+        // femu_log("TRIM victim ru cnt : %d \n", v_rg->ru_mgmt->victim_ru_cnt );
+
+        // ssd->n->subsys->endgrp.fdp.hbmw = 0 ;
+        // ssd->n->subsys->endgrp.fdp.mbmw = 0 ;
+        // ssd->n->subsys->endgrp.fdp.mbe = 0 ;
+
+        
+    }else {
+        for (lpn = start_lpn; lpn <= end_lpn; lpn++)
+        {
+
+            ppa = get_maptbl_ent(ssd, lpn);
+            ftl_assert(&ppa != NULL);
+
+            if (mapped_ppa(&ppa))
+            {
+                /* update old page information first */
+                //qemu-system-x86_64: ../hw/femu/bbssd/ftl.c:1271: : Assertion `pg->status == PG_VALID' failed.
+                //Thread 36 "qemu-system-x86" received signal SIGABRT, Aborted.
+                    
+                //pg = get_pg(ssd, &ppa);
+                // if ( pg->status == PG_INVALID)
+                // {
+                //     ftl_err("pg->status(%d) != PG_VALID(%d) start_lpn=%ld lpn %ld end_lpn=%ld tt_pgs=%d .g.blk %d \n",pg->status,PG_VALID, start_lpn, lpn, end_lpn, ssd->sp.tt_pgs, ppa.g.blk);
+                //     continue;
+                // }else if (pg->status == PG_FREE){
+                //     ftl_err("pg->status(%d) != PG_VALID(%d) start_lpn=%ld lpn %ld end_lpn=%ld tt_pgs=%d .g.blk %d \n",pg->status,PG_VALID, start_lpn, lpn, end_lpn, ssd->sp.tt_pgs, ppa.g.blk);
+                //     continue;
+                // }
+
+                mark_page_invalid(ssd, &ppa);   //This does 1. block vpc-=1 and line vpc-=1 2.the RU victimize as well. 
+                set_rmap_ent(ssd, INVALID_LPN, &ppa);   //map invalid set
+            }
+        }
+    }
+
+#endif
 
 
 }
@@ -2783,7 +2966,12 @@ static void *ftl_thread(void *arg)
                 break;
             case NVME_CMD_DSM:
                 lat = 25000;
-                ssd_trim_fdp_style(n, req, req->slba, req->nlb);
+
+                ftl_debug(" req->cmd cdw10 %d (%x) cdq 11 %d (%x) \n", req->cmd.cdw10,req->cmd.cdw10,req->cmd.cdw11,req->cmd.cdw11);
+                if (req->cmd.cdw11 & 0x4 ){
+                    //DEALLOCATE
+                    ssd_trim_fdp_style(n, req, req->slba, req->nlb);
+                }
                 break;
             default:
                 if (req->cmd.opcode == NVME_CMD_IO_MGMT_RECV)
