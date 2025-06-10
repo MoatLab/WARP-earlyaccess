@@ -1273,12 +1273,20 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     
     if (pg->status != PG_VALID ){
         ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
+        ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
+        ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
+        ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
+
+        
+        
         //ftl_assert(pg->status == PG_VALID);
         if (pg->status == PG_INVALID ||pg->status == PG_FREE )
         {
             //page already invalidated.
             return;
         }else {
+            ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
+
             ftl_assert(pg->status == PG_VALID);            //Can free page hit this?
         }
     }
@@ -1873,7 +1881,6 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
          *      victim->my_cb = victim->utilization / ((1-victim->utilization) *  ) ;
          */
 
-
         uint64_t now = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
         QTAILQ_INIT(&ru_list_temp);
         while(( r = (FemuReclaimUnit *) pqueue_pop(ru_mgmt->victim_ru_pq)) != NULL){
@@ -1895,7 +1902,6 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         victim_ru->utilization = (float)victim_ru->vpc / (ssd->sp.pgs_per_line * ssd->sp.lines_per_ru);
         float temp = (float)victim_ru->utilization/((1-victim_ru->utilization) * (now - victim_ru->last_invalidated_time));
         ftl_log("GC_GLOBAL_CB RUH%d gc type %d id %d vic_ru_cnt %d vic_ru cb %.2f (%.2f) v/t %d/%d util %.2f time %lu now %lu last %lu\n", ruhid, ru_mgmt->mgmt_type, victim_ru->lines[0]->id, ru_mgmt->victim_ru_cnt, victim_ru->my_cb, temp,victim_ru->vpc, ssd->sp.pgs_per_line,victim_ru->utilization, (now - victim_ru->last_invalidated_time) , now ,victim_ru->last_invalidated_time);
-
         //QTAILQ_EMPTY(&ru_list_temp);
         break;
 
@@ -1915,12 +1921,16 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         /**
          * @brief 
          * If there is a sequential stream among the workload, it will naturally generates low utilization block, leading low write amplification.
-         * The theory looks the same with greedy algorithm. The difference of this alogrithm is not selecting sequential stream at all. 
+         * The theory looks the same with greedy algorithm. 
+         * The difference of this alogrithm is not selecting sequential stream at all. 
+         * 
          * Three information for RUH
          *      1. RUH global wa    //ruh_mgmt->waf_score_global
          *      2. RUH recent wa    //ruh_mgmt->waf_score_transitory
          *      3. RUH global util  //ruh_mgmt->utilization (ruh_mgmt->vpc_total / (ru_in_use_cnt * pgs_per_ru ))
-         * If recent wa == 1.0 then likely this stream is sequential. Wait for this to invalidate itself.
+         * 
+         * 1) If it keeps invalidated sequentially then let this RU to be keep invalidated. (using zone like ptr?)
+         * 2) If recent wa == 1.0 then likely this stream is sequential. Wait for this to invalidate itself.
          * 
          */
         ru_mgmt = ssd->rg[rgid].ru_mgmt;
@@ -2133,7 +2143,7 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     }
     if(!force){
         //background & ru->util high then skip this ru
-        if(victim_ru->utilization > 0.4){
+        if(victim_ru->utilization > 0.05){
             //ftl_err("victim RU util is high(%f), gc skip (victim %d free %lu full %d total %lu victim_ru->util %2.f)\n",victim_ru->utilization , rm->victim_ru_cnt, rm->free_ru_cnt, rm->full_ru_cnt, ( rm->victim_ru_cnt+rm->free_ru_cnt+rm->full_ru_cnt) ,  victim_ru->utilization);
             pqueue_insert(rm->victim_ru_pq, victim_ru);
             rm->victim_ru_cnt++;
@@ -2435,6 +2445,7 @@ static uint64_t ssd_stream_write(FemuCtrl *n, struct ssd *ssd, NvmeRequest *req)
         rgid = 0;
     }
 
+    //FIXME change it to noFDP 
     ruhid = ns->fdp.phs[ph]; // ns -> handler index
     // ru = &ns->endgrp->fdp.ruhs[ruhid].rus[rg];
 
@@ -2658,12 +2669,7 @@ void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t n
     // erase only relevent blocks 
     //struct nand_block *blk;
     //struct nand_page *pg;
-    uint64_t lba = slba;
-    uint64_t start_lpn = lba / spp->secs_per_pg;
-    uint64_t end_lpn = (lba + nlb - 1) / spp->secs_per_pg;
-    uint64_t lpn;
-    uint64_t start_blk_index ;
-    uint64_t end_blk_index ; 
+
 
     //Prototype erase all blocks 
     //TODO FIXME : fix with lba range
@@ -2767,6 +2773,12 @@ void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t n
         //3. Possibly have quick erase but now can leave it to GC 
         //4. For FDP, make sure the corresponding RU should be enqued to vicim queue
         //5. May decrease or increase FDP counter such as "available space" but leave it for now.
+    uint64_t lba = slba;
+    uint64_t start_lpn = lba / spp->secs_per_pg;
+    uint64_t end_lpn = (lba + nlb - 1) / spp->secs_per_pg;
+    uint64_t lpn;
+    uint64_t start_blk_index ;
+    uint64_t end_blk_index ; 
 
     #ifdef FEMU_DEBUG_FTL
     ppa = get_maptbl_ent(ssd, start_lpn);
