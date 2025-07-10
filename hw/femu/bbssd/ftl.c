@@ -1864,11 +1864,11 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
 
     FemuReclaimUnit *victim_ru = NULL;
     FemuReclaimUnit *r = NULL;
-    QTAILQ_HEAD(ru_list_temp, FemuReclaimUnit) ru_list_temp;
+    //QTAILQ_HEAD(ru_list_temp, FemuReclaimUnit) ru_list_temp;
     struct ru_mgmt *ru_mgmt = ssd->rg[rgid].ru_mgmt;
     //ftl_err("   INSIDE  select_victim_ru\n");
-    //ru_mgmt->mgmt_type = GC_GLOBAL_GREEDY;
-    ru_mgmt->mgmt_type = GC_GLOBAL_CB;
+    ru_mgmt->mgmt_type = GC_GLOBAL_GREEDY;
+    //ru_mgmt->mgmt_type = GC_GLOBAL_CB;
 
     switch (ru_mgmt->mgmt_type)
     {
@@ -1882,15 +1882,15 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
          */
 
         uint64_t now = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
-        QTAILQ_INIT(&ru_list_temp);
+        //QTAILQ_INIT(&ru_list_temp);
         while(( r = (FemuReclaimUnit *) pqueue_pop(ru_mgmt->victim_ru_pq)) != NULL){
             r->utilization = (float)r->vpc / (ssd->sp.pgs_per_line * ssd->sp.lines_per_ru);
             r->my_cb = (float)CACL_COST_BENEFIT ( r->utilization , (now - r->last_invalidated_time) );
-            QTAILQ_INSERT_TAIL(&ru_list_temp, r, entry);
+            //QTAILQ_INSERT_TAIL(&ru_list_temp, r, entry);
             pqueue_insert( ru_mgmt->victim_ru_cb, r );
         }
         victim_ru = pqueue_pop(ru_mgmt->victim_ru_cb);
-        QTAILQ_REMOVE(&ru_list_temp, victim_ru, entry);
+        //QTAILQ_REMOVE(&ru_list_temp, victim_ru, entry);
 
         while( ( r = (FemuReclaimUnit *) pqueue_pop(ru_mgmt->victim_ru_cb)) != NULL ){
             //r was 0x0
@@ -1910,9 +1910,7 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         //ftl_err("RUH%d is NVME_RUHT_PERSISTENTLY_ISOLATED gc type %d vic ru cnt %d\n", ruhid, ru_mgmt->mgmt_type,ru_mgmt->victim_ru_cnt );
         ftl_assert(ru_mgmt != NULL);
         victim_ru = pqueue_pop(ru_mgmt->victim_ru_pq);
-        if(victim_ru != NULL){
-            ru_mgmt->victim_ru_cnt--;
-        }
+
         ftl_assert(victim_ru != NULL);
         break;
     case GC_SELECTIVE_RUH : 
@@ -2049,7 +2047,9 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
     //while(cb queue is empty)
     //  ru = pop from cb 
     //  pqeueu_insert( rm->victim_ru_pq  , ru->last_invalid_time , ru)
-
+    if(victim_ru != NULL){
+        ru_mgmt->victim_ru_cnt--;
+    }
     return victim_ru;
 }
 /*
