@@ -117,6 +117,7 @@ pqueue_change_priority(pqueue_t *q, pqueue_pri_t new_pri, void *d);
  * @return NULL on error, otherwise the entry
  */
 void *pqueue_pop(pqueue_t *q);
+void *pqueue_randpop(pqueue_t *q);
 
 /**
  * remove an item from the queue.

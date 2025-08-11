@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "../inc/pqueue.h"
 
@@ -38,6 +39,7 @@ pqueue_t *pqueue_init(size_t n, pqueue_cmp_pri_f cmppri, pqueue_get_pri_f getpri
         pqueue_set_pri_f setpri, pqueue_get_pos_f getpos, pqueue_set_pos_f setpos)
 {
     pqueue_t *q;
+    srand(time(NULL));   // Initialization, should only be called once.
 
     if (!(q = malloc(sizeof(pqueue_t))))
         return NULL;
@@ -182,7 +184,24 @@ void *pqueue_pop(pqueue_t *q)
 
     return head;
 }
+void *pqueue_randpop(pqueue_t *q)
+{
+    void *head;
+    void *tmp;
+    if (!q || q->size == 1)
+        return NULL;
+    
+    int ra = rand() % q->size + 1;
+    head = q->d[ra];
+    tmp = q->d[ra];
+    q->d[ra] = q->d[1];
+    q->d[1] = tmp;
+    q->d[1] = q->d[--q->size];
 
+    percolate_down(q, 1);
+
+    return head;
+}
 void *pqueue_peek(pqueue_t *q)
 {
     void *d;
@@ -192,6 +211,48 @@ void *pqueue_peek(pqueue_t *q)
     d = q->d[1];
     return d;
 }
+/*
+
+void *pqueue_iter_and_set(pqueue_t *q, pqueue_pri_t new_value){
+
+    size_t posn;
+    void *head;
+    head = pqueue_peek(q); 
+    stack_t S ;
+    S.push(head)
+
+    for S is not empty {
+        head = S.pop()
+        head.value = new_value 
+
+        if head->right != NULL {
+            S.push(head->right)
+        }
+
+        if head->left != NULL{
+            S.push(head->left)
+        }
+
+    } 
+
+    free(S)
+    head = pqueue_peek(q)
+    size_t posn = q->getpos(d);
+
+    if (q->cmppri(q->getpri(head), q->getpri(q->d[posn])))
+        bubble_up(q, posn);
+    else
+        percolate_down(q, posn);
+    
+}*/
+// void *pqueue_iter_and_set(pqueue_t *q, pqueue_pri_t fix_time_value){
+    
+//     for (i = 1; i < q->size ;i++) {
+        
+//         q->d[i]
+//     }
+
+// }
 
 void pqueue_dump(pqueue_t *q, FILE *out, pqueue_print_entry_f print)
 {

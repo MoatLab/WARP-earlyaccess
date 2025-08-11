@@ -150,7 +150,7 @@ static inline void victim_ru_set_pri(void *a, pqueue_pri_t pri)
 static inline int victim_ru_cmp_pri_by_cb(pqueue_pri_t next, pqueue_pri_t curr)
 {
     //next > curr //min heap, greedy, cb 
-    return (next > curr);   // next<curr  
+    return (next > curr); //min heap
 }
 
 static inline pqueue_pri_t victim_ru_get_pri_by_cb(void *a)
@@ -367,7 +367,7 @@ static FemuReclaimUnit *get_next_free_ru(struct ssd *ssd, FemuReclaimGroup *rg)
             ru->lines[i] = get_next_free_line(ssd);
         }
     }
-    ru->last_init_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000; 
+    ru->last_init_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME); 
     ru->chance_token = 3;
 
     return ru;
@@ -396,7 +396,8 @@ static FemuReclaimUnit *fdp_get_new_ru(struct ssd *ssd, uint16_t rgidx, uint16_t
     //ftl_log("     eruh->rus[%d] = new_ru fin(new_ru.ruamw:%lu,   ruh->rus[rg].ruamw : %lu)\n", rgidx, new_ru->ru->ruamw, eruh->ruh->rus[rgidx]->ruamw);
     // ftl_assert(eruh->curr_ru == new_ru);
     ftl_assert(new_ru->ruh == eruh);
-    //ftl_debug("ruh %d - call new ru ( new_ru %d %p curr_ru %d at %p )\n", ruh->ruhid, new_ru->ruidx, new_ru, curr_ru->ruidx, curr_ru);
+
+    new_ru->last_init_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);  
 
     return new_ru;
 }
@@ -464,6 +465,7 @@ static FemuReclaimUnit *fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGroup
                     }
                     else
                     {
+
                         for (int i = 0; i < ru->n_lines; ++i)
                         {
                             struct line *line = ru->lines[i];
@@ -471,8 +473,19 @@ static FemuReclaimUnit *fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGroup
                             ftl_assert((spp->pgs_per_line - (line->vpc + line->ipc)) == 0); // Victim ru have either valid or invalid pages only. Not free pages.
                         }
                         ftl_debug("   fdp_advance_ru_pointer - RUH %d victim ru id %d , %p \n",curr_ru->ruh->ruhid , curr_ru->ruidx, curr_ru);
-                        pqueue_insert(rm->victim_ru_pq, curr_ru);
+                        
+                        if (rm->mgmt_type == GC_GLOBAL_CB){
+                            ru->utilization = (float) ru->vpc / ru->npages;
+                            ru->my_cb = CACL_COST_BENEFIT_APPROX(ru->utilization, ru->last_invalidated_time) ;
+                            pqueue_insert(rm->victim_ru_cb, curr_ru);
+                        }else{
+                            pqueue_insert(rm->victim_ru_pq, curr_ru);
+                            ftl_debug("Err if rm->mgmt_type == GC_GLOBAL_CB");
+
+                        }
                         rm->victim_ru_cnt++;
+
+
                     }
 
                     if (ruh != NULL)
@@ -488,7 +501,7 @@ static FemuReclaimUnit *fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGroup
                         //ftl_assert(new_ru->ruh == ruh);
                         //ftl_assert(ruh->ruh->rus[rg->rgidx] == new_ru->nvme_ru);    
                         wpp = new_ru->ssd_wptr;
-                        ftl_debug("ruh %d - call new ru ( new_ru %d line id %d %p curr_ru %d at %p )\n", ruh->ruhid, new_ru->ruidx, new_ru->lines[0]->id, new_ru, curr_ru->ruidx, curr_ru);
+                        ftl_debug("ruh %d - call new ru ( new_ru %d line id %d %p curr_ru %d ru_in_use_cnt %u )  \n", ruh->ruhid, new_ru->ruidx, new_ru->lines[0]->id, new_ru, curr_ru->ruidx, ruh->ru_in_use_cnt);
                         // Assume fdp get new ru make ru->lines have free lines
 
                         if (wpp == NULL)
@@ -860,6 +873,8 @@ static void femu_fdp_init_ru_mgmt(struct ssd *ssd, FemuReclaimGroup *rg)
     rm->victim_ru_cnt_type_permnt = 0;
     rm->victim_ru_cnt = 0;
     rm->full_ru_cnt = 0;
+    //rm->mgmt_type = GC_GLOBAL_CB;
+    
     QTAILQ_INIT(&rm->free_ru_list);
     QTAILQ_INIT(&rm->full_ru_list);
 
@@ -902,7 +917,7 @@ static void femu_fdp_init_ssd_reclaim_unit(struct ssd *ssd, FemuReclaimUnit *fem
     femu_ru->ipc = 0;
     femu_ru->ssd_wptr = (struct write_pointer *)g_malloc0(sizeof(struct write_pointer));
     femu_ru->npages = spp->lines_per_ru * spp->pgs_per_line;
-    //femu_ru->last_init_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000;;    //init when full & gc. 
+    femu_ru->last_init_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);    //init when full & gc. 
     //femu_ru->last_invalidated_time = 0; //update when invalidated. init to 0 when gced
 
     wpp = femu_ru->ssd_wptr;
@@ -1027,6 +1042,7 @@ static void femu_fdp_ssd_init_ru_handles(FemuCtrl *n, struct ssd *ssd)
         ssd->ruhs[i].ruh_type = endgrp->fdp.ruhs[i].ruht;
         ssd->ruhs[i].ruhid = i;
         // ssd->ruhs[i].n_ru = 0;
+        ssd->ruhs[i].ruh_live_pages_cnt =0;
         ssd->ruhs[i].ru_in_use_cnt = 0;
         ssd->ruhs[i].curr_rg = 0;
         ssd->ruhs[i].hbmw = 0;
@@ -1277,8 +1293,6 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
         ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
 
-        
-        
         //ftl_assert(pg->status == PG_VALID);
         if (pg->status == PG_INVALID ||pg->status == PG_FREE )
         {
@@ -1343,106 +1357,188 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
 
     }
     #endif
-
     #ifdef SSD_STREAM_WRITE
-    struct ru_mgmt *rm = ssd->rg[0].ru_mgmt;
+    struct ru_mgmt *rm = ssd->rg[0].ru_mgmt;    //FIXME : if multi-rg support
     FemuReclaimUnit *ru = line->my_ru;
 
     /* update corresponding ru status */
     ru->ipc = line->ipc;
     ftl_assert(ru != NULL);
+    
+    //ftl_debug(" .. Mark page invalid\n");
+    switch(rm->mgmt_type){
+    case GC_GLOBAL_GREEDY:
+    case GC_GLOBAL_RAND:
+        /* GREEDY : ru is queued */
+        if(ru->pos){
+            //fdp_log( " Overwrite ruhid %d ru->pos %d \n", ru->ruh->ruhid ,ru->pos);
+            pqueue_change_priority(rm->victim_ru_pq, ru->vpc - 1, ru);
+            ru->utilization = ((float)ru->vpc / (float)(ru->vpc+ru->ipc)); 
+            
+        }
+        else{
+            ru->vpc--;
+        }
+        line->vpc--;
+        ftl_assert(ru->vpc==line->vpc);
 
-    /* GREEDY : ru is queued */
-    if(ru->pos){
-        //fdp_log( " Overwrite ruhid %d ru->pos %d \n", ru->ruh->ruhid ,ru->pos);
-        pqueue_change_priority(rm->victim_ru_pq, ru->vpc - 1, ru);
-        ru->utilization = ((float)ru->vpc / (float)(ru->vpc+ru->ipc)); 
+        if ( was_full_line && ((ru->vpc+1)==spp->pgs_per_line) ){ //FIXME : when ru has multiple lines
+            QTAILQ_REMOVE(&rm->full_ru_list, ru, entry);
+            rm->full_ru_cnt--;
+            ftl_log( "      ... victim ru %p ruhid %d (age %lu util %.2f score %.2f)inserted  \n", ru, ru->ruh->ruhid, ru->last_invalidated_time, ru->utilization, ru->my_cb);
+            pqueue_insert(rm->victim_ru_pq, ru);
+            rm->victim_ru_cnt++;
+            if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
+                rm = ru->ruh->ru_mgmt; 
+                pqueue_insert(rm->victim_ru_pq, ru);
+                rm->victim_ru_cnt++;
+            }
+        }
+
+        break;
+    case GC_GLOBAL_CB:
         
-    }
-    else{
+        /* Cost-benefit 
+
+            i) Cost = amount of data read and write. therefore, 1+u = (u)
+            ii) Benefit = amount of data that can be restore * age. therefore, (1-u)*age
+        
+            From i) and ii) Therefore, 
+            ... CB = u / {(1-u)*age} ...(1)
+
+            iii) age = Now - creation time, 
+                // ru's creation_time |<----------------------------------------------->|  get_curr_time  => age
+                //      ru's creation_time |<------------------------------------------>|  get_curr_time  => age
+
+                Therefore, age has proportional relation to below:
+                    age = Now - creation_time ,
+                    So, age ∝ -creation_time
+                    ... age ∝ 1/creation_time ...(2)
+
+
+                iii-1) when it's invalidated, decrease u. 
+                iii-2) when it's invalidated,
+                    1) creation time reseted = last_invalidated_time. // Default
+                    2) creation time remains //OK?
+                
+                From (2), iii-1) and iii-2.1), 
+                age ∝ 1/creation_time = 1/last_invalidated_time
+                Therefore, 
+                    1/age ∝ last_invalidated_time
+                    last_invalidated_time ∝ 1/age ...(3)
+
+                Therefore, 
+                CB  = u / {(1-u)*age} ...(1)
+                    = (u/(1-u)) * (1/age)
+                    ∝ (u/(1-u)) * last_invalidated_time ...(3)
+                
+                Therefore,
+                    CB  ∝ (u/(1-u)) * last_invalidated_time
+                        := (u/(1-u)) * last_invalidated_time ...[fin]
+        */
+
+        /*set inv cnt and utilization of RU*/
         ru->vpc--;
-        ru->utilization = ((float)ru->vpc / (float)(ru->vpc+ru->ipc)); 
-    }
+        line->vpc--;
+        ftl_assert(ru->vpc==line->vpc);
+        ru->utilization = (float)((float)ru->vpc / (float)(ru->npages)); 
 
-    /* Cost-benefit : ru is queued */
+        /* set age */
+        ru->last_invalidated_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
 
-    //Cost = amount of data read and write. therefore, 1+u
-    //Benefit = amount of data that can be restore * age. therefore, (1-u)*age
-    //age = time elasped till last gc time, 
-        // age needs to be resorted ..? 
-        // ru's last gc time |<----------------------------------------------->|  get_curr_time  => age
-        //      ru's last gc time |<----------------------->|  get_curr_time  => age
-        // get curr time whenever it's get invalidated. 
+        /* Calculate CB */
+        //ru->my_cb = (ru->utilization/(1-ru->utilization)) * ru->last_invalidated_time ;
+        if (ru->vpc == 0){
+            ru->utilization = 0;
+            ru->my_cb = 0;
 
-    //ru->vpc--;
-    
-    line->vpc--;
-    ftl_assert(ru->vpc==line->vpc);
-    ru->utilization = (float)((float)ru->vpc / (float)(ru->npages)); 
-    ru->last_invalidated_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);  //ms
+        }else{
+            ru->my_cb = CACL_COST_BENEFIT_APPROX(ru->utilization,ru->last_invalidated_time);
+        }
+        /* Put in to victim pqueue*/
+        if(ru->pos){
+            pqueue_change_priority(rm->victim_ru_cb, ru->my_cb, ru);
+            if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
+                rm = ru->ruh->ru_mgmt; 
+                pqueue_change_priority(rm->victim_ru_cb, ru->my_cb, ru);
+            }
+        }
 
-    //ru->last_invalidated_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000;       //ms
-    // if(ru->last_invalidated_time == 0)
-    //     ru->last_invalidated_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000;
-    // else{
-    //     ru->last_invalidated_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000;       //ms
-    // }
-    // if(ru->last_init_time == 0 ){
-    //     //ru is not full but invalidated. In this case, ru considered as hot and age would be, smaller. so lets do 1.
-    //     //ru->my_cb = CACL_COST_BENEFIT(ru->utilization, 1);
-    //     ru->my_cb = CACL_WRITE_COST(ru->utilization)
-    // }else{
-    //     //ru->my_cb = CACL_COST_BENEFIT(ru->utilization, (ru->last_invalidated_time - ru->last_init_time) );
-    //     ru->my_cb = CACL_WRITE_COST(ru->utilization)
-    // }
-    // ru->my_cb = CACL_WRITE_COST(ru->utilization);
-    // //ru->my_cb = CACL_COST_BENEFIT(ru->utilization, ru->last_init_time); //periodic age reset 
-    // if(ru->pos){
-    //     // ru is queued.
-    //     pqueue_change_priority(rm->victim_ru_pq, ru->my_cb, ru);
-    //     // if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
-    //     //     rm = ru->ruh->ru_mgmt; 
-    //     //     pqueue_change_priority(rm->victim_ru_pq, ru->my_cb, ru);
-    //     // }
-    // }
+        if ( was_full_line && ((ru->vpc+1)==spp->pgs_per_line) ){ //FIXME : when ru has multiple lines
+            QTAILQ_REMOVE(&rm->full_ru_list, ru, entry);
+            rm->full_ru_cnt--;
+            ftl_log( "      ... victim ru %p ruhid %d (age %lu util %.2f score %.2f)inserted \n", ru, ru->ruh->ruhid, ru->last_invalidated_time, ru->utilization, ru->my_cb);
+            pqueue_insert(rm->victim_ru_cb, ru);
+            rm->victim_ru_cnt++;
+            if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
+                rm = ru->ruh->ru_mgmt; 
+                pqueue_insert(rm->victim_ru_cb, ru);
+                rm->victim_ru_cnt++;
+            }
+        }
 
-    if( was_full_line && ((ru->vpc+1)==spp->pgs_per_line) ) //FIXME : when ru has multiple lines
-    {
-        QTAILQ_REMOVE(&rm->full_ru_list, ru, entry);
-        rm->full_ru_cnt--;
-        ftl_log( "      ... victim ru %p ruhid %d (age %lu util %.2f score %.2f)inserted  \n", ru, ru->ruh->ruhid, ru->last_invalidated_time, ru->utilization, ru->my_cb);
-        pqueue_insert(rm->victim_ru_pq, ru);
-        rm->victim_ru_cnt++;
-        
-        // if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
-        //     rm = ru->ruh->ru_mgmt; 
-        //     pqueue_insert(rm->victim_ru_pq, ru);
-        //     rm->victim_ru_cnt++;
+        break;
+        // case GC_GLOBAL_CB_version2:
+        //     /*set inv cnt and utilization of RU*/
+        //     line->vpc--;
+        //     ftl_assert(ru->vpc==line->vpc);
+        //     ru->utilization = (float)((float)ru->vpc / (float)(ru->npages)); 
+        //     ru->ruh->ruh_live_pages_cnt -=1 ;
+        //     /* set age */
+        //     // ru->last_invalidated_time = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+        //     /* Calculate CB */
+        //     //ru->my_cb = (ru->utilization/(1-ru->utilization)) * ru->last_invalidated_time ;
+        //     ru->my_cb = CACL_COST_BENEFIT_APPROX(ru->utilization,ru->last_init_time);
+        //     /* Put in to victim pqueue*/
+        //     if(ru->pos){
+        //         pqueue_change_priority(rm->victim_ru_pq, ru->my_cb, ru);
+        //         if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
+        //             rm = ru->ruh->ru_mgmt; 
+        //             pqueue_change_priority(rm->victim_ru_pq, ru->my_cb, ru);
+        //         }
+        //     }else if ( was_full_line && ((ru->vpc+1)==spp->pgs_per_line) ){ //FIXME : when ru has multiple lines
+        //         QTAILQ_REMOVE(&rm->full_ru_list, ru, entry);
+        //         rm->full_ru_cnt--;
+        //         ftl_log( "      ... victim ru %p ruhid %d (age %lu util %.2f score %.2f)inserted  \n", ru, ru->ruh->ruhid, ru->last_invalidated_time, ru->utilization, ru->my_cb);
+        //         pqueue_insert(rm->victim_ru_pq, ru);
+        //         rm->victim_ru_cnt++;        
+        //         if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
+        //             rm = ru->ruh->ru_mgmt; 
+        //             pqueue_insert(rm->victim_ru_pq, ru);
+        //             rm->victim_ru_cnt++;
+        //         }
+        //     }
+        //     break;
+
+    case GC_GLOBAL_WARM:
+
+        //WARM style hot/cold cost benefit
+        // else{
+        //     ru->last_invalidated_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000;     //us
+        //     if(ru->pos){
+        //         //ru is queued
+        //         if (ru is in cold queue and within the watermark){
+        //             pqueue_remove(rm->victim_ru_pq , ru);
+        //         }else if (ru is in cold queue and over the watermark){
+        //             pqueue_change_priority(rm->victim_ru_pq , ru->last_invalidated_time, ru);    // insert to min heap
+        //         }else{
+        //             //ru is not in cold queue
+        //             pqueue_change_priority(rm->victim_ru_pq_hot, ru->last_invalidated_time, ru); // insert to min heap
+        //         }
+        //     }
+        //     if(was_full_line){
+        //         QTAILQ_REMOVE(&rm->full_ru_list, ru, entry);
+        //         rm->full_ru_cnt--;
+        //         pqueue_insert(rm->victim_ru_pq_hot, ru);
+        //         rm->victim_ru_cnt++;
+        //     }
         // }
-
-    }
+        default:
+        break;
+    };
     
-    //WARM style hot/cold cost benefit
-    // else{
-    //     ru->last_invalidated_time = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000)/1000;     //us
-    //     if(ru->pos){
-    //         //ru is queued
-    //         if (ru is in cold queue and within the watermark){
-    //             pqueue_remove(rm->victim_ru_pq , ru);
-    //         }else if (ru is in cold queue and over the watermark){
-    //             pqueue_change_priority(rm->victim_ru_pq , ru->last_invalidated_time, ru);    // insert to min heap
-    //         }else{
-    //             //ru is not in cold queue
-    //             pqueue_change_priority(rm->victim_ru_pq_hot, ru->last_invalidated_time, ru); // insert to min heap
-    //         }
-    //     }
-    //     if(was_full_line){
-    //         QTAILQ_REMOVE(&rm->full_ru_list, ru, entry);
-    //         rm->full_ru_cnt--;
-    //         pqueue_insert(rm->victim_ru_pq_hot, ru);
-    //         rm->victim_ru_cnt++;
-    //     }
-    // }
+    ru->ruh->ruh_live_pages_cnt -=1 ;
+    
     #endif
 
 }
@@ -1484,6 +1580,9 @@ static void mark_page_valid(struct ssd *ssd, struct ppa *ppa, FemuReclaimUnit *r
         }
     }
 
+    //logging 
+    ru->ruh->ruh_live_pages_cnt += 1; 
+
 }
 
 static void mark_block_free(struct ssd *ssd, struct ppa *ppa)
@@ -1497,6 +1596,7 @@ static void mark_block_free(struct ssd *ssd, struct ppa *ppa)
         /* reset page status */
         pg = &blk->pg[i];
         ftl_assert(pg->nsecs == spp->secs_per_pg);
+
         pg->status = PG_FREE;
     }
 
@@ -1797,7 +1897,7 @@ static void mark_ru_free(struct ssd *ssd, uint16_t rgid, FemuReclaimUnit *ru)
     rm->free_ru_cnt++;
 
     //I'm not sure about these codes at this moment ; inho
-    ru->last_init_time =  qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000/1000;
+    //ru->last_init_time =  qemu_clock_get_ns(QEMU_CLOCK_REALTIME)/1000/1000;
     //ru->last_invalidated_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     //ftl_debug("  mark_ru_free FIN\n");
 
@@ -1863,12 +1963,12 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
 {
 
     FemuReclaimUnit *victim_ru = NULL;
-    FemuReclaimUnit *r = NULL;
     //QTAILQ_HEAD(ru_list_temp, FemuReclaimUnit) ru_list_temp;
     struct ru_mgmt *ru_mgmt = ssd->rg[rgid].ru_mgmt;
     //ftl_err("   INSIDE  select_victim_ru\n");
     ru_mgmt->mgmt_type = GC_GLOBAL_GREEDY;
     //ru_mgmt->mgmt_type = GC_GLOBAL_CB;
+    //ru_mgmt->mgmt_type = GC_GLOBAL_RAND;
 
     switch (ru_mgmt->mgmt_type)
     {
@@ -1881,38 +1981,51 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
          *      victim->my_cb = victim->utilization / ((1-victim->utilization) *  ) ;
          */
 
-        uint64_t now = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
-        //QTAILQ_INIT(&ru_list_temp);
-        while(( r = (FemuReclaimUnit *) pqueue_pop(ru_mgmt->victim_ru_pq)) != NULL){
-            r->utilization = (float)r->vpc / (ssd->sp.pgs_per_line * ssd->sp.lines_per_ru);
-            r->my_cb = (float)CACL_COST_BENEFIT ( r->utilization , (now - r->last_invalidated_time) );
-            //QTAILQ_INSERT_TAIL(&ru_list_temp, r, entry);
-            pqueue_insert( ru_mgmt->victim_ru_cb, r );
-        }
+        // uint64_t now = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+        // //QTAILQ_INIT(&ru_list_temp);
+        // while(( r = (FemuReclaimUnit *) pqueue_pop(ru_mgmt->victim_ru_pq)) != NULL){
+        //     r->utilization = (float)r->vpc / (ssd->sp.pgs_per_line * ssd->sp.lines_per_ru);
+        //     r->my_cb = (float)CACL_COST_BENEFIT ( r->utilization , (now - r->last_invalidated_time) );
+        //     //QTAILQ_INSERT_TAIL(&ru_list_temp, r, entry);
+        //     pqueue_insert( ru_mgmt->victim_ru_cb, r );
+        // }
+        // victim_ru = pqueue_pop(ru_mgmt->victim_ru_cb);
+        // //QTAILQ_REMOVE(&ru_list_temp, victim_ru, entry);
+
+        // while( ( r = (FemuReclaimUnit *) pqueue_pop(ru_mgmt->victim_ru_cb)) != NULL ){
+        //     //r was 0x0
+        //     ftl_assert(r!=NULL);
+        //     pqueue_insert( ru_mgmt->victim_ru_pq , r );
+        // }
+        // ftl_assert(victim_ru!=NULL);
+        // //ftl_assert( victim_ru->utilization != )
+        // victim_ru->utilization = (float)victim_ru->vpc / (ssd->sp.pgs_per_line * ssd->sp.lines_per_ru);
+        // float temp = (float)victim_ru->utilization/((1-victim_ru->utilization) * (now - victim_ru->last_invalidated_time));
+        // ftl_log("GC_GLOBAL_CB RUH%d gc type %d id %d vic_ru_cnt %d vic_ru cb %.2f (%.2f) v/t %d/%d util %.2f time %lu now %lu last %lu\n", ruhid, ru_mgmt->mgmt_type, victim_ru->lines[0]->id, ru_mgmt->victim_ru_cnt, victim_ru->my_cb, temp,victim_ru->vpc, ssd->sp.pgs_per_line,victim_ru->utilization, (now - victim_ru->last_invalidated_time) , now ,victim_ru->last_invalidated_time);
+        // //QTAILQ_EMPTY(&ru_list_temp);
+        ru_mgmt = ssd->rg[rgid].ru_mgmt;
+        ftl_assert(ru_mgmt != NULL);
         victim_ru = pqueue_pop(ru_mgmt->victim_ru_cb);
-        //QTAILQ_REMOVE(&ru_list_temp, victim_ru, entry);
+        ftl_debug("victim_ru %p rm->victim_cnt %d \n",victim_ru, ru_mgmt->victim_ru_cnt);
 
-        while( ( r = (FemuReclaimUnit *) pqueue_pop(ru_mgmt->victim_ru_cb)) != NULL ){
-            //r was 0x0
-            ftl_assert(r!=NULL);
-            pqueue_insert( ru_mgmt->victim_ru_pq , r );
-        }
-        ftl_assert(victim_ru!=NULL);
-        //ftl_assert( victim_ru->utilization != )
-        victim_ru->utilization = (float)victim_ru->vpc / (ssd->sp.pgs_per_line * ssd->sp.lines_per_ru);
-        float temp = (float)victim_ru->utilization/((1-victim_ru->utilization) * (now - victim_ru->last_invalidated_time));
-        ftl_log("GC_GLOBAL_CB RUH%d gc type %d id %d vic_ru_cnt %d vic_ru cb %.2f (%.2f) v/t %d/%d util %.2f time %lu now %lu last %lu\n", ruhid, ru_mgmt->mgmt_type, victim_ru->lines[0]->id, ru_mgmt->victim_ru_cnt, victim_ru->my_cb, temp,victim_ru->vpc, ssd->sp.pgs_per_line,victim_ru->utilization, (now - victim_ru->last_invalidated_time) , now ,victim_ru->last_invalidated_time);
-        //QTAILQ_EMPTY(&ru_list_temp);
+        //ftl_assert(victim_ru != NULL);  // select_victim_ru: Assertion `victim_ru != ((void *)0)' failed.
         break;
-
     case GC_GLOBAL_GREEDY:
         ru_mgmt = ssd->rg[rgid].ru_mgmt;
         //ftl_err("RUH%d is NVME_RUHT_PERSISTENTLY_ISOLATED gc type %d vic ru cnt %d\n", ruhid, ru_mgmt->mgmt_type,ru_mgmt->victim_ru_cnt );
         ftl_assert(ru_mgmt != NULL);
         victim_ru = pqueue_pop(ru_mgmt->victim_ru_pq);
-
         ftl_assert(victim_ru != NULL);
         break;
+
+    case GC_GLOBAL_RAND:
+        ru_mgmt = ssd->rg[rgid].ru_mgmt;
+        //ftl_err("RUH%d is NVME_RUHT_PERSISTENTLY_ISOLATED gc type %d vic ru cnt %d\n", ruhid, ru_mgmt->mgmt_type,ru_mgmt->victim_ru_cnt );
+        ftl_assert(ru_mgmt != NULL);
+        victim_ru = pqueue_randpop(ru_mgmt->victim_ru_pq);
+        ftl_assert(victim_ru != NULL);
+        break;
+
     case GC_SELECTIVE_RUH : 
     case GC_EXPLOIT_SEQUENTIAL : 
         //RUH select logic here
@@ -1972,10 +2085,10 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
             }else if(ruh_mgmt->waf_score_global < 1.1 ){
             }
 
-            if(victim_ru != NULL){
-                ru_mgmt->victim_ru_cnt--;
-            }
-            ftl_assert(victim_ru != NULL);
+            // if(victim_ru != NULL){
+            //     ru_mgmt->victim_ru_cnt--;
+            // }
+            // ftl_assert(victim_ru != NULL);
 
         }
         break ;
@@ -2021,14 +2134,6 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         break;
     default:
         ftl_err("GC policy not set \n");
-        ru_mgmt = ssd->rg[rgid].ru_mgmt;
-        
-        ftl_assert(ru_mgmt != NULL);
-        
-        victim_ru = pqueue_pop(ru_mgmt->victim_ru_pq);
-        if(victim_ru != NULL){
-            ru_mgmt->victim_ru_cnt--;
-        }
         break;
     }
 
@@ -2175,7 +2280,6 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     }
 
     //ftl_debug( " [BEFORE RU status] : victim ru idx %d , %p  ruh %d rus[%d] %d at %p curr_ru %d at %p (nvme_ru %p ), gc_ru %d at %p (nvme_ru %p)\n",victim_ru->ruidx , victim_ru ,ruhid, rgid, ruh->rus[rgid]->ruidx, ruh->rus[rgid], ruh->curr_ru->ruidx, ruh->curr_ru, ruh->curr_ru->nvme_ru, ruh->gc_ru->ruidx, ruh->gc_ru, ruh->gc_ru->nvme_ru); //OK
-                                                        
     //mapping changing 
     for (int i = 0; i < spp->lines_per_ru; ++i)
     {
@@ -2186,7 +2290,6 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
         //ftl_log("GC-ing ch[%d]w[%d]line:%d, vpc=%d,ipc=%d,victim=%d,full=%d,free=%d\n", spp->nchs, spp->luns_per_ch, ppa.g.blk,
         //          victim_line->vpc, victim_line->ipc, ssd->lm.victim_line_cnt, ssd->lm.full_line_cnt,
         //          ssd->lm.free_line_cnt);
-
         // copy back valid data
         for (ch = 0; ch < spp->nchs; ++ch)
         {
@@ -2232,8 +2335,23 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     }
     //mark_line_free(ssd, &ppa); //free line in mark ru free
     mark_ru_free(ssd, rgid, victim_ru);
+    
+    if (ssd->ruhs[ruhid].ru_in_use_cnt > 0)
+        ssd->ruhs[ruhid].ru_in_use_cnt -= 1;
+
+    ssd->ruhs[ruhid].ruh_live_pages_cnt -= vpc_cnt;
     // update_ruh_waf(ssd, victim_ru)
-    ftl_debug( "\n Background ++ : is_force %d rg->free_ru_cnt %lu ruhid %d lm->free_line_cnt %d  vpc_cnt %d ru->pgs %d  \n", force , ssd->rg[rgid].ru_mgmt->free_ru_cnt, victim_ru->ruh->ruhid, ssd->lm.free_line_cnt, vpc_cnt, spp->pgs_per_blk * spp->nchs * spp->luns_per_ch);
+    ftl_debug( "\n Background ++ : is_force %d rg->free_ru_cnt %lu ruhid %d lm->free_line_cnt %d vpc_cnt %d ru->pgs %d total_ru_use_in_cnt %d/%u/%lu, %d/%u/%lu, %d/%u/%lu  (ruh/cnt/live_pgs) total_hbmw_in_pgs(ruh/hb/mb) %d/%lu/%lu %d/%lu/%lu %d/%lu/%lu\n", 
+                                    force, ssd->rg[rgid].ru_mgmt->free_ru_cnt, 
+                                    victim_ru->ruh->ruhid, ssd->lm.free_line_cnt, vpc_cnt, spp->pgs_per_blk * spp->nchs * spp->luns_per_ch, 
+                                    ssd->ruhs[0].ruhid, ssd->ruhs[0].ru_in_use_cnt,ssd->ruhs[0].ruh_live_pages_cnt,
+                                    ssd->ruhs[2].ruhid, ssd->ruhs[2].ru_in_use_cnt,ssd->ruhs[2].ruh_live_pages_cnt,
+                                    ssd->ruhs[7].ruhid, ssd->ruhs[7].ru_in_use_cnt,ssd->ruhs[7].ruh_live_pages_cnt,
+                                    ssd->ruhs[0].ruhid, ssd->ruhs[0].hbmw, ssd->ruhs[0].mbmw,
+                                    ssd->ruhs[2].ruhid, ssd->ruhs[2].hbmw, ssd->ruhs[2].mbmw,
+                                    ssd->ruhs[7].ruhid, ssd->ruhs[7].hbmw, ssd->ruhs[7].mbmw
+                                    );
+
     //ftl_debug( " [AFTER RU status] : victim ru idx %d , %p  ruh %d rus[%d] %d at %p curr_ru %d at %p (nvme_ru %p ), gc_ru %d at %p (nvme_ru %p)\n",victim_ru->ruidx , victim_ru ,ruhid, rgid, ruh->rus[rgid]->ruidx, ruh->rus[rgid], ruh->curr_ru->ruidx, ruh->curr_ru, ruh->curr_ru->nvme_ru, ruh->gc_ru->ruidx, ruh->gc_ru, ruh->gc_ru->nvme_ru); //OK
     
     return 0;
@@ -2444,14 +2562,16 @@ static uint64_t ssd_stream_write(FemuCtrl *n, struct ssd *ssd, NvmeRequest *req)
         ph = 0;
         rgid = 0;
     }
-
+#ifdef FORCE_NOFDP
+    ph = 0;
+#endif
     //FIXME change it to noFDP 
     ruhid = ns->fdp.phs[ph]; // ns -> handler index
     // ru = &ns->endgrp->fdp.ruhs[ruhid].rus[rg];
 
     rg = &ssd->rg[rgid];
     ruh = &ssd->ruhs[ruhid];
-    if ( ruh->curr_ru == NULL) {
+    if ( unlikely(ruh->curr_ru == NULL) ) {
         ftl_err("Really hitting this area ? Only hit when ruh->ru is trimmed or first used\n");
         ruh->rus[rgid] = fdp_get_new_ru(ssd, rgid, ruhid);
         ruh->ruh->rus[rgid] = ruh->rus[rgid]->nvme_ru;

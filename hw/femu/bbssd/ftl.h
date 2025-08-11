@@ -8,7 +8,7 @@
 #define UNMAPPED_PPA    (~(0ULL))
 
 #define SSD_STREAM_WRITE 
-
+//#define FORCE_NOFDP
 typedef struct FemuReclaimGroup FemuReclaimGroup;
 typedef struct FemuRuHandle FemuRuHandle;
 typedef struct FemuReclaimUnit FemuReclaimUnit; 
@@ -245,12 +245,14 @@ typedef struct rg_mgmt{
 enum{
     GC_GLOBAL_GREEDY = 0,
     GC_GLOBAL_CB = 1, 
-    GC_SELECTIVE_RUH = 2,
-    GC_SELECTIVE_RUH_ADV = 3,
-    GC_SELECTIVE_MIDAS_OP = 4,
-    GC_SELECTIVE_RUH_SOCIAL_WELFARE =5,
-    GC_EXPLOIT_SEQUENTIAL = 6,
-    GC_BIT_POPULATION =7,
+    GC_GLOBAL_RAND = 2,
+    GC_GLOBAL_WARM = 3,
+    GC_SELECTIVE_RUH = 10,
+    GC_SELECTIVE_RUH_ADV = 11,
+    GC_SELECTIVE_MIDAS_OP = 12,
+    GC_SELECTIVE_RUH_SOCIAL_WELFARE =13,
+    GC_EXPLOIT_SEQUENTIAL = 14,
+    GC_BIT_POPULATION =15,
 };
 
 typedef struct ru_mgmt{
@@ -331,15 +333,16 @@ typedef struct FemuReclaimUnit{
     #define UTILIZATION(c,v) (v/c)  //#C: num pages( pgs_in_blk * nchnls * nways) V: valid page counts
     //#define CACL_COST_BENEFIT(u,time) ((1-u) * time)/(1+u)    //  = benefit / cost (so MaxHeap)
     #define CACL_COST_BENEFIT(u,time) 100000*u/((1-u) * time)          //  = cost/benefit (so MinHeap)
-    //   u / ( (1 - u) * (time) ) ;
+    #define CACL_COST_BENEFIT_APPROX(u,last_invalid_time) ( 100000 * u/((1-u) * last_invalid_time) )
     #define CACL_WRITE_COST(u) (2/(1-u))    //and do min heap
 }FemuReclaimUnit;
 
 typedef struct FemuRuHandle{
     uint16_t ruh_type;
-    uint16_t ruhid;               //how can ftl know this?
+    uint16_t ruhid;            
     //int n_ru;
-    int ru_in_use_cnt;
+    uint32_t ru_in_use_cnt;
+    uint64_t ruh_live_pages_cnt;
     uint16_t curr_rg;               //init 0
     NvmeRuHandle *ruh;              //1. pointer to original reclaim unit handle
     FemuReclaimUnit **rus;           //2. List that this ruh have. I don't think this is necessary. 
