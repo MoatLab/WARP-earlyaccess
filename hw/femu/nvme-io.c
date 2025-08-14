@@ -209,7 +209,7 @@ static void nvme_process_cq_cpl(void *arg, int index_poller)
         pqueue_pop(pq);
         processed++;
         n->nr_tt_ios++;
-        if (now - req->expire_time >= 2000) {
+        if (now - req->expire_time >= 100) {
             n->nr_tt_late_ios++;
             if (n->print_log) {
                 femu_debug("%s,diff,pq.count=%lu,%" PRId64 ", %lu/%lu\n",

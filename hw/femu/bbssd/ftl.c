@@ -381,7 +381,8 @@ static FemuReclaimUnit *fdp_get_new_ru(struct ssd *ssd, uint16_t rgidx, uint16_t
     //ftl_log("     INSIDE fdp_get_new_ru\n");
     if ((new_ru = get_next_free_ru(ssd, rg)) == NULL)
     {
-        ftl_err("NO reclaim Unit.\n");
+        ftl_err("NO reclaim Unit. Device is full error\n");
+
         return NULL;
     }
     new_ru->rgidx = rgidx;
@@ -493,7 +494,12 @@ static FemuReclaimUnit *fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGroup
                         /* current line is used up, pick another empty line */
                         check_addr(wpp->blk, spp->blks_per_pl);
 
-                        new_ru = fdp_get_new_ru(ssd, ru->rgidx, ruh->ruhid);
+                        if((new_ru = fdp_get_new_ru(ssd, ru->rgidx, ruh->ruhid)) == NULL){
+                            ftl_err("No free space left in device. \n");
+                            ftl_assert(false && __LINE__ );
+
+                        }
+
                         //ruh->curr_ru = new_ru; 
                         //ruh->rus[rg->rgidx] = new_ru;
                         //ruh->ruh->rus[rg->rgidx] = new_ru->nvme_ru;
@@ -1942,6 +1948,10 @@ static int check_gc_ruh_available(struct ssd *ssd, FemuRuHandle * ruh){
             ftl_debug("check_gc_ruh_available ruh %d gc_ru idx %d , %p call new ru  \n", ruh->ruhid, ruh->gc_ru->ruidx, ruh->gc_ru );
             assert(ruh->gc_ru != NULL);
         }
+    }else{
+        ftl_err("Unsupported RUH type : %d\n",ruh->ruh_type);
+        ftl_assert(false); //        ftl_err("Unsupported RUH type : %d\n",ruh->ruh_type);
+
     }
     return 0;
 }
