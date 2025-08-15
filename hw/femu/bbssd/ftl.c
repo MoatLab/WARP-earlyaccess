@@ -138,6 +138,7 @@ static inline int victim_ru_cmp_pri(pqueue_pri_t next, pqueue_pri_t curr)
 
 static inline pqueue_pri_t victim_ru_get_pri(void *a)
 {
+    ftl_assert(a != NULL);
     return ((FemuReclaimUnit *)a)->vpc;
 }
 
@@ -482,7 +483,6 @@ static FemuReclaimUnit *fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGroup
                         }else{
                             pqueue_insert(rm->victim_ru_pq, curr_ru);
                             ftl_debug("Err if rm->mgmt_type == GC_GLOBAL_CB");
-
                         }
                         rm->victim_ru_cnt++;
 
@@ -1060,10 +1060,6 @@ static void femu_fdp_ssd_init_ru_handles(FemuCtrl *n, struct ssd *ssd)
         ssd->ruhs[i].rus = (FemuReclaimUnit **)g_malloc0(sizeof(FemuReclaimUnit *) * endgrp->fdp.nrg);
         for (int j = 0; j < endgrp->fdp.nrg; j++)
         {
-            // ssd->ruhs[i].rus[j] = &ruh[i].rus[j];            //TODO
-            // FemuReclaimUnit *  incompatible pointer type ‘NvmeReclaimUnit *
-            // ssd->ruhs[i].rus = ssd->rus;        //all mapped.
-            //ssd->ruhs[i].rus[j] = get_next_free_ru(ssd, &ssd->rg[j]);
             ssd->ruhs[i].rus[j] = fdp_get_new_ru(ssd, j, i);
             ssd->ruhs[i].rus[j]->ruh = &ssd->ruhs[i];
             ssd->ruhs[i].ruh->rus[j] = ssd->ruhs[i].rus[j]->nvme_ru;
@@ -1292,7 +1288,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     /* update corresponding page status */
     pg = get_pg(ssd, ppa);
     ftl_assert(pg != NULL);
-    
+    ftl_assert(pg->status == PG_VALID);
     if (pg->status != PG_VALID ){
         ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
         ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
@@ -1375,9 +1371,18 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     switch(rm->mgmt_type){
     case GC_GLOBAL_GREEDY:
     case GC_GLOBAL_RAND:
+
+
+
+
         /* GREEDY : ru is queued */
         if(ru->pos){
             //fdp_log( " Overwrite ruhid %d ru->pos %d \n", ru->ruh->ruhid ,ru->pos);
+            ftl_assert(ru != ru->ruh->curr_ru);         //Just checking. If this happens, then it explains sudden failure
+            ftl_assert(ru != ssd->ruhs[0].curr_ru);     //Just checking. If this happens, then it explains sudden failure
+            ftl_assert(ru != ssd->ruhs[1].curr_ru);     //Just checking. If this happens, then it explains sudden failure
+            ftl_assert(ru != ssd->ruhs[2].curr_ru);     //Just checking. If this happens, then it explains sudden failure
+
             pqueue_change_priority(rm->victim_ru_pq, ru->vpc - 1, ru);
             ru->utilization = ((float)ru->vpc / (float)(ru->vpc+ru->ipc)); 
             
@@ -1388,17 +1393,20 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         line->vpc--;
         ftl_assert(ru->vpc==line->vpc);
 
+        
         if ( was_full_line && ((ru->vpc+1)==spp->pgs_per_line) ){ //FIXME : when ru has multiple lines
+            
             QTAILQ_REMOVE(&rm->full_ru_list, ru, entry);
             rm->full_ru_cnt--;
+            
             ftl_log( "      ... victim ru %p ruhid %d (age %lu util %.2f score %.2f)inserted  \n", ru, ru->ruh->ruhid, ru->last_invalidated_time, ru->utilization, ru->my_cb);
             pqueue_insert(rm->victim_ru_pq, ru);
             rm->victim_ru_cnt++;
-            if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
-                rm = ru->ruh->ru_mgmt; 
-                pqueue_insert(rm->victim_ru_pq, ru);
-                rm->victim_ru_cnt++;
-            }
+            // if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
+            //     rm = ru->ruh->ru_mgmt; 
+            //     pqueue_insert(rm->victim_ru_pq, ru);
+            //     rm->victim_ru_cnt++;
+            // }
         }
 
         break;
@@ -1464,10 +1472,10 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         /* Put in to victim pqueue*/
         if(ru->pos){
             pqueue_change_priority(rm->victim_ru_cb, ru->my_cb, ru);
-            if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
-                rm = ru->ruh->ru_mgmt; 
-                pqueue_change_priority(rm->victim_ru_cb, ru->my_cb, ru);
-            }
+            // if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
+            //     rm = ru->ruh->ru_mgmt; 
+            //     pqueue_change_priority(rm->victim_ru_cb, ru->my_cb, ru);
+            // }
         }
 
         if ( was_full_line && ((ru->vpc+1)==spp->pgs_per_line) ){ //FIXME : when ru has multiple lines
@@ -1476,11 +1484,11 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
             ftl_log( "      ... victim ru %p ruhid %d (age %lu util %.2f score %.2f)inserted \n", ru, ru->ruh->ruhid, ru->last_invalidated_time, ru->utilization, ru->my_cb);
             pqueue_insert(rm->victim_ru_cb, ru);
             rm->victim_ru_cnt++;
-            if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
-                rm = ru->ruh->ru_mgmt; 
-                pqueue_insert(rm->victim_ru_cb, ru);
-                rm->victim_ru_cnt++;
-            }
+            // if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
+            //     rm = ru->ruh->ru_mgmt; 
+            //     pqueue_insert(rm->victim_ru_cb, ru);
+            //     rm->victim_ru_cnt++;
+            // }
         }
 
         break;
@@ -1505,7 +1513,6 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         //     }else if ( was_full_line && ((ru->vpc+1)==spp->pgs_per_line) ){ //FIXME : when ru has multiple lines
         //         QTAILQ_REMOVE(&rm->full_ru_list, ru, entry);
         //         rm->full_ru_cnt--;
-        //         ftl_log( "      ... victim ru %p ruhid %d (age %lu util %.2f score %.2f)inserted  \n", ru, ru->ruh->ruhid, ru->last_invalidated_time, ru->utilization, ru->my_cb);
         //         pqueue_insert(rm->victim_ru_pq, ru);
         //         rm->victim_ru_cnt++;        
         //         if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
@@ -1542,8 +1549,8 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         default:
         break;
     };
-    
-    ru->ruh->ruh_live_pages_cnt -=1 ;
+    if (ru->ruh->ruh_live_pages_cnt > 0)
+        ru->ruh->ruh_live_pages_cnt -=1 ;
     
     #endif
 
@@ -1793,10 +1800,9 @@ static int clean_one_block_fdp_style(struct ssd *ssd, struct ppa *ppa, FemuRecla
         ppa->g.pg = pg;
         pg_iter = get_pg(ssd, ppa);
         /* there shouldn't be any free page in victim blocks */
-        //ftl_assert(pg_iter->status != PG_FREE);
         if (pg_iter->status == PG_FREE){
             ftl_err(" pg g.blk %d new_ru %d %p violate pg_iter->status != PG_FREE \n", ppa->g.blk, new_ru->ruidx, new_ru);
-            //pg_iter->status = PG_INVALID;
+            ftl_assert(pg_iter->status != PG_FREE);
         }
         if (pg_iter->status == PG_VALID)
         {
@@ -2250,12 +2256,13 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     ftl_assert(ruh != NULL);
     ftl_assert(ruh->rus[rgid] != NULL);
 
-    if ((victim_ru == ruh->rus[rgid]) || (victim_ru == victim_ru->ruh->rus[rgid]))
+    if ((victim_ru == ruh->rus[rgid]) || (victim_ru == victim_ru->ruh->rus[rgid]) || victim_ru == victim_ru->ruh->curr_ru )
     {
-        ftl_err("Violated 'Initially isolated' feature. Victim RU was in active state \n"); //?
+        ftl_err(" Victim RU was in active state \n"); //?
         abort();        //This needs work
         ruh = victim_ru->ruh;
     }
+
     if(!force){
         //background & ru->util high then skip this ru
         if(victim_ru->utilization > 0.05){
@@ -2343,26 +2350,37 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
         nvme_fdp_stat_inc(&ssd->ruhs[ssd->nruhs-1].ruh->hbmw, (uint64_t) ( vpc_cnt * spp->secsz * spp->secs_per_pg ));   //(3)
         nvme_fdp_stat_inc(&ssd->ruhs[ssd->nruhs-1].ruh->mbmw, (uint64_t) ( vpc_cnt * spp->secsz * spp->secs_per_pg ));   //(3)
     }
-    //mark_line_free(ssd, &ppa); //free line in mark ru free
-    mark_ru_free(ssd, rgid, victim_ru);
-    
-    if (ssd->ruhs[ruhid].ru_in_use_cnt > 0)
-        ssd->ruhs[ruhid].ru_in_use_cnt -= 1;
 
-    ssd->ruhs[ruhid].ruh_live_pages_cnt -= vpc_cnt;
+   
+    if (ssd->ruhs[ victim_ru->ruh->ruhid].ru_in_use_cnt > 0)
+        ssd->ruhs[ victim_ru->ruh->ruhid].ru_in_use_cnt -= 1;
+
+    ssd->ruhs[ victim_ru->ruh->ruhid ].ruh_live_pages_cnt -= vpc_cnt;
     // update_ruh_waf(ssd, victim_ru)
-    ftl_debug( "\n Background ++ : is_force %d rg->free_ru_cnt %lu ruhid %d lm->free_line_cnt %d vpc_cnt %d ru->pgs %d total_ru_use_in_cnt %d/%u/%lu, %d/%u/%lu, %d/%u/%lu  (ruh/cnt/live_pgs) total_hbmw_in_pgs(ruh/hb/mb) %d/%lu/%lu %d/%lu/%lu %d/%lu/%lu\n", 
+    // ftl_debug( "\n Background ++ : is_force %d rg->free_ru_cnt %lu ruhid %d lm->free_line_cnt %d vpc_cnt %d ru->pgs %d total_ru_use_in_cnt %d/%u/%lu, %d/%u/%lu, %d/%u/%lu  (ruh/cnt/live_pgs) total_hbmw_in_pgs(ruh/hb/mb) %d/%lu/%lu %d/%lu/%lu %d/%lu/%lu\n", 
+    //                                 force, ssd->rg[rgid].ru_mgmt->free_ru_cnt, 
+    //                                 victim_ru->ruh->ruhid, ssd->lm.free_line_cnt, vpc_cnt, spp->pgs_per_blk * spp->nchs * spp->luns_per_ch, 
+    //                                 ssd->ruhs[0].ruhid, ssd->ruhs[0].ru_in_use_cnt,ssd->ruhs[0].ruh_live_pages_cnt,
+    //                                 ssd->ruhs[1].ruhid, ssd->ruhs[1].ru_in_use_cnt,ssd->ruhs[1].ruh_live_pages_cnt,
+    //                                 ssd->ruhs[2].ruhid, ssd->ruhs[2].ru_in_use_cnt,ssd->ruhs[2].ruh_live_pages_cnt,
+    //                                 ssd->ruhs[0].ruhid, ssd->ruhs[0].hbmw, ssd->ruhs[0].mbmw,
+    //                                 ssd->ruhs[1].ruhid, ssd->ruhs[1].hbmw, ssd->ruhs[1].mbmw,
+    //                                 ssd->ruhs[2].ruhid, ssd->ruhs[2].hbmw, ssd->ruhs[2].mbmw
+    //                                 );
+    ftl_debug( "\n Background ++ : is_force %d rg->free_ru_cnt %lu ruhid %d lm->free_line_cnt %d vpc_cnt %d ru->pgs %d total_ru_use_in_cnt %d/%d/%d, %d/%d/%d, %d/%d/%d  (ruh/cnt/live_pgs) total_hbmw_in_pgs(ruh/hb/mb) %d/%lu/%lu %d/%lu/%lu %d/%lu/%lu\n", 
                                     force, ssd->rg[rgid].ru_mgmt->free_ru_cnt, 
                                     victim_ru->ruh->ruhid, ssd->lm.free_line_cnt, vpc_cnt, spp->pgs_per_blk * spp->nchs * spp->luns_per_ch, 
                                     ssd->ruhs[0].ruhid, ssd->ruhs[0].ru_in_use_cnt,ssd->ruhs[0].ruh_live_pages_cnt,
+                                    ssd->ruhs[1].ruhid, ssd->ruhs[1].ru_in_use_cnt,ssd->ruhs[1].ruh_live_pages_cnt,
                                     ssd->ruhs[2].ruhid, ssd->ruhs[2].ru_in_use_cnt,ssd->ruhs[2].ruh_live_pages_cnt,
-                                    ssd->ruhs[7].ruhid, ssd->ruhs[7].ru_in_use_cnt,ssd->ruhs[7].ruh_live_pages_cnt,
                                     ssd->ruhs[0].ruhid, ssd->ruhs[0].hbmw, ssd->ruhs[0].mbmw,
-                                    ssd->ruhs[2].ruhid, ssd->ruhs[2].hbmw, ssd->ruhs[2].mbmw,
-                                    ssd->ruhs[7].ruhid, ssd->ruhs[7].hbmw, ssd->ruhs[7].mbmw
+                                    ssd->ruhs[1].ruhid, ssd->ruhs[1].hbmw, ssd->ruhs[1].mbmw,
+                                    ssd->ruhs[2].ruhid, ssd->ruhs[2].hbmw, ssd->ruhs[2].mbmw
                                     );
-
     //ftl_debug( " [AFTER RU status] : victim ru idx %d , %p  ruh %d rus[%d] %d at %p curr_ru %d at %p (nvme_ru %p ), gc_ru %d at %p (nvme_ru %p)\n",victim_ru->ruidx , victim_ru ,ruhid, rgid, ruh->rus[rgid]->ruidx, ruh->rus[rgid], ruh->curr_ru->ruidx, ruh->curr_ru, ruh->curr_ru->nvme_ru, ruh->gc_ru->ruidx, ruh->gc_ru, ruh->gc_ru->nvme_ru); //OK
+    
+    //mark_line_free(ssd, &ppa); //free line in mark ru free
+    mark_ru_free(ssd, rgid, victim_ru);
     
     return 0;
 }

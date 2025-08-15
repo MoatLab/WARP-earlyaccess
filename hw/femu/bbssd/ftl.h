@@ -341,8 +341,8 @@ typedef struct FemuRuHandle{
     uint16_t ruh_type;
     uint16_t ruhid;            
     //int n_ru;
-    uint32_t ru_in_use_cnt;
-    uint64_t ruh_live_pages_cnt;
+    int ru_in_use_cnt;
+    int ruh_live_pages_cnt;
     uint16_t curr_rg;               //init 0
     NvmeRuHandle *ruh;              //1. pointer to original reclaim unit handle
     FemuReclaimUnit **rus;           //2. List that this ruh have. I don't think this is necessary. 
