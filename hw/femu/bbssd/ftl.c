@@ -403,6 +403,33 @@ static FemuReclaimUnit *fdp_get_new_ru(struct ssd *ssd, uint16_t rgidx, uint16_t
 
     return new_ru;
 }
+// /* Let's ensure that victim ru is in both rg->rm and ruh->rm */
+static int check_ruh_gc_entry(struct ssd *ssd, FemuReclaimUnit *ru)
+{
+    //struct ssdparams *spp = &ssd->sp;
+    FemuReclaimGroup *rg = &ssd->rg[ru->rgidx];
+    //struct ru_mgmt *rm = rg->ru_mgmt; //FIXEME when multi rg
+    //FemuRuHandle *ruh = ru->ruh; //&ssd->ruhs[]
+
+    ftl_assert(ru !=NULL);
+    ftl_assert(ru->rgidx >= 0); //stupid assert. rgidx is uint16
+    //ftl_assert(ru->ruh != NULL);
+
+    switch (rg->ru_mgmt->mgmt_type)
+    {
+    case GC_GLOBAL_CB:
+    case GC_GLOBAL_GREEDY:
+    case GC_GLOBAL_RAND:
+        /* No need to handle in such cases */
+        return 0;
+        break;
+    default:
+        //if ru
+        return 1;
+        break;
+    }
+}
+
 static FemuReclaimUnit *fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGroup *rg, FemuRuHandle *ruh, FemuReclaimUnit *ru)
 {
     struct ssdparams *spp = &ssd->sp;
@@ -480,11 +507,20 @@ static FemuReclaimUnit *fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGroup
                             ru->utilization = (float) ru->vpc / ru->npages;
                             ru->my_cb = CACL_COST_BENEFIT_APPROX(ru->utilization, ru->last_invalidated_time) ;
                             pqueue_insert(rm->victim_ru_cb, curr_ru);
+
                         }else{
                             pqueue_insert(rm->victim_ru_pq, curr_ru);
-                            ftl_debug("Err if rm->mgmt_type == GC_GLOBAL_CB");
+                            if ( check_ruh_gc_entry(ssd, curr_ru) ){
+                                rm = curr_ru->ruh->ru_mgmt;
+                                ftl_assert(rm!=NULL);
+                                pqueue_insert(rm->victim_ru_pq, curr_ru);
+                            }
+
+                            //ftl_debug("Err if rm->mgmt_type == GC_GLOBAL_CB");
+
                         }
                         rm->victim_ru_cnt++;
+                        //
 
 
                     }
@@ -690,6 +726,7 @@ static FemuReclaimUnit *femu_fdp_get_ru(struct ssd *ssd, uint16_t rgid, uint16_t
         }
         ftl_assert (ruh->curr_ru==ruh->rus[rgid]);
     }
+
     return ruh->rus[rgid]; // NULL
     // }
     // return ruh->curr_ru;
@@ -879,18 +916,21 @@ static void femu_fdp_init_ru_mgmt(struct ssd *ssd, FemuReclaimGroup *rg)
     rm->victim_ru_cnt_type_permnt = 0;
     rm->victim_ru_cnt = 0;
     rm->full_ru_cnt = 0;
+    //Declare global gc strategy
     //rm->mgmt_type = GC_GLOBAL_CB;
-    
+    //rm->mgmt_type = GC_NOISY_RUH_CUSTOM;
+    rm->mgmt_type = GC_GLOBAL_GREEDY
+
     QTAILQ_INIT(&rm->free_ru_list);
     QTAILQ_INIT(&rm->full_ru_list);
 
     rm->victim_ru_cb = pqueue_init(rm->tt_rus, victim_ru_cmp_pri_by_cb,
-                                   victim_ru_get_pri_by_cb, victim_ru_set_pri_by_cb,
-                                   victim_ru_get_pos, victim_ru_set_pos);
+                                victim_ru_get_pri_by_cb, victim_ru_set_pri_by_cb,
+                                victim_ru_get_pos, victim_ru_set_pos);
         
     rm->victim_ru_pq = pqueue_init(rm->tt_rus, victim_ru_cmp_pri,
-                                   victim_ru_get_pri, victim_ru_set_pri,
-                                   victim_ru_get_pos, victim_ru_set_pos);
+                                victim_ru_get_pri, victim_ru_set_pri,
+                                victim_ru_get_pos, victim_ru_set_pos);
 }
 static void _femu_fdp_init_ru_mgmt(struct ssd *ssd, struct ru_mgmt *init)
 {
@@ -901,12 +941,17 @@ static void _femu_fdp_init_ru_mgmt(struct ssd *ssd, struct ru_mgmt *init)
     rm->victim_ru_cnt_type_permnt = 0;
     rm->victim_ru_cnt = 0;
     rm->full_ru_cnt = 0;
+    rm->custom_gc_threshold = 0;
+
+    //Declare per RUH gc strategy
+    rm->mgmt_type = GC_GLOBAL_GREEDY;   //default
+    
     QTAILQ_INIT(&rm->free_ru_list);
     QTAILQ_INIT(&rm->full_ru_list);
 
     rm->victim_ru_cb = pqueue_init(rm->tt_rus, victim_ru_cmp_pri_by_cb,
-                                   victim_ru_get_pri_by_cb, victim_ru_set_pri_by_cb,
-                                   victim_ru_get_pos, victim_ru_set_pos);
+                                victim_ru_get_pri_by_cb, victim_ru_set_pri_by_cb,
+                                victim_ru_get_pos, victim_ru_set_pos);
 
     rm->victim_ru_pq = pqueue_init(rm->tt_rus, victim_ru_cmp_pri,
                                 victim_ru_get_pri, victim_ru_set_pri,
@@ -1069,7 +1114,7 @@ static void femu_fdp_ssd_init_ru_handles(FemuCtrl *n, struct ssd *ssd)
             ftl_assert((ssd->ruhs[i].rus[j]->ruh == &ssd->ruhs[i]));
         }
         ftl_assert((ssd->ruhs[i].ruh == &endgrp->fdp.ruhs[i]));
-        if (nvme_ruh->ruht == NVME_RUHT_PERSISTENTLY_ISOLATED)
+        if (nvme_ruh->ruht == NVME_RUHT_PERSISTENTLY_ISOLATED)  //FIXME 
         {
             ssd->ruhs[i].ru_mgmt = (struct ru_mgmt *)g_malloc0(sizeof(struct ru_mgmt));
             // ssd->ruhs[i].ru_mgmt->tt_rus = rg->tt_nru;
@@ -1077,6 +1122,26 @@ static void femu_fdp_ssd_init_ru_handles(FemuCtrl *n, struct ssd *ssd)
             _femu_fdp_init_ru_mgmt(ssd, ssd->ruhs[i].ru_mgmt);
         }
         femu_debug(" init ssd->ruhs[i].rus %p ssd->ruhs[i].curr_ru %p line id %d \n", ssd->ruhs[i].rus, ssd->ruhs[i].curr_ru , ssd->ruhs[i].curr_ru->lines[0]->id );
+    }
+    //ftl_assert that femu_fdp_ssd_init_reclaim_group( ) has called before. 
+    struct ru_mgmt *rm = ssd->rg->ru_mgmt; //FIXME mutli rg
+    if(rm->mgmt_type == GC_NOISY_RUH_CUSTOM ) {
+        //0/819/51960331, 1/96/4170425, 2/55/2452209 5.0 rHMW 
+        uint64_t avail_ru_cnt;
+        ftl_assert(rm->tt_rus != 0);
+        ftl_assert(rm->gc_thres_rus_high != 0);
+
+        avail_ru_cnt = rm->tt_rus - rm->gc_thres_rus_high ; //overflow?
+        avail_ru_cnt = rm->tt_rus - 1 ; //overflow?
+
+        // ssd->ruhs[1].ru_mgmt->custom_gc_threshold = 96;      //avail_ru_cnt/()   //1.272
+        // ssd->ruhs[2].ru_mgmt->custom_gc_threshold = 55;                          //1.272
+
+        ssd->ruhs[1].ru_mgmt->custom_gc_threshold = 96+5; 
+        ssd->ruhs[2].ru_mgmt->custom_gc_threshold = 55+5;
+        ssd->ruhs[0].ru_mgmt->custom_gc_threshold = avail_ru_cnt - 96 - 55 -10;
+
+        //ftl_assert( (ssd->ruhs[0].ru_mgmt->custom_gc_threshold+ ssd->ruhs[1].ru_mgmt->custom_gc_threshold+ ssd->ruhs[2].ru_mgmt->custom_gc_threshold) <= (rm->tt_rus - rm->gc_thres_rus_high));
     }
 }
 void ssd_init(FemuCtrl *n)
@@ -1306,20 +1371,20 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
             ftl_assert(pg->status == PG_VALID);            //Can free page hit this?
         }
     }
-   
+
     pg->status = PG_INVALID;
 
     /* update corresponding block status */
     blk = get_blk(ssd, ppa);
     ftl_assert(blk != NULL);
-    //iqemu-system-x86_64: ../hw/femu/bbssd/ftl.c:1286: : Assertion `blk->vpc > 0 && blk->vpc <= spp->pgs_per_blk' failed.
+
     if( !(blk->ipc >= 0 && blk->ipc < spp->pgs_per_blk ) || !(blk->vpc > 0 && blk->vpc <= spp->pgs_per_blk)){
         ftl_err("        ftl_assert!(blk->ipc %d >= 0 && blk->ipc < spp->pgs_per_blk %d);   \n", blk->ipc ,spp->pgs_per_blk);
         ftl_err("        ftl_assert!(blk->vpc %d > 0 && blk->vpc <= spp->pgs_per_blk %d);   \n", blk->vpc ,spp->pgs_per_blk);
 
     }
 
-    ftl_assert(blk->ipc >= 0 && blk->ipc < spp->pgs_per_blk);
+    ftl_assert(blk->ipc >= 0 && blk->ipc < spp->pgs_per_blk);//
     blk->ipc++;
     ftl_assert(blk->vpc > 0 && blk->vpc <= spp->pgs_per_blk);
     blk->vpc--;
@@ -1329,7 +1394,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     ftl_assert(line->ipc >= 0 && line->ipc < spp->pgs_per_line);
     if (line->vpc == spp->pgs_per_line)
     {
-        ftl_assert(line->ipc == 0);
+        ftl_assert(line->ipc == 0); //qemu-system-x86_64: ../hw/femu/bbssd/ftl.c:1394: mark_page_invalid: Assertion `line->ipc == 0' failed. WHEN RUN FIO twice
         was_full_line = true;
     }
     line->ipc++;
@@ -1370,6 +1435,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     //ftl_debug(" .. Mark page invalid\n");
     switch(rm->mgmt_type){
     case GC_GLOBAL_GREEDY:
+    case GC_NOISY_RUH_CUSTOM:   //FORNOW
     case GC_GLOBAL_RAND:
 
 
@@ -1378,21 +1444,20 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         /* GREEDY : ru is queued */
         if(ru->pos){
             //fdp_log( " Overwrite ruhid %d ru->pos %d \n", ru->ruh->ruhid ,ru->pos);
-            ftl_assert(ru != ru->ruh->curr_ru);         //Just checking. If this happens, then it explains sudden failure
-            ftl_assert(ru != ssd->ruhs[0].curr_ru);     //Just checking. If this happens, then it explains sudden failure
-            ftl_assert(ru != ssd->ruhs[1].curr_ru);     //Just checking. If this happens, then it explains sudden failure
-            ftl_assert(ru != ssd->ruhs[2].curr_ru);     //Just checking. If this happens, then it explains sudden failure
-
             pqueue_change_priority(rm->victim_ru_pq, ru->vpc - 1, ru);
             ru->utilization = ((float)ru->vpc / (float)(ru->vpc+ru->ipc)); 
-            
+            if ( check_ruh_gc_entry(ssd, ru) ){
+                rm = ru->ruh->ru_mgmt;
+                ftl_assert(rm!=NULL);
+                //pqueue_insert(rm->victim_ru_pq, curr_ru);
+                pqueue_change_priority(rm->victim_ru_pq, ru->vpc, ru);
+            }
         }
         else{
             ru->vpc--;
         }
         line->vpc--;
         ftl_assert(ru->vpc==line->vpc);
-
         
         if ( was_full_line && ((ru->vpc+1)==spp->pgs_per_line) ){ //FIXME : when ru has multiple lines
             
@@ -1402,6 +1467,13 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
             ftl_log( "      ... victim ru %p ruhid %d (age %lu util %.2f score %.2f)inserted  \n", ru, ru->ruh->ruhid, ru->last_invalidated_time, ru->utilization, ru->my_cb);
             pqueue_insert(rm->victim_ru_pq, ru);
             rm->victim_ru_cnt++;
+            if ( check_ruh_gc_entry(ssd, ru) ){
+                rm = ru->ruh->ru_mgmt;
+                ftl_assert(rm!=NULL);
+                pqueue_insert(rm->victim_ru_pq, ru);
+                //pqueue_change_priority(rm->victim_ru_pq, ru->vpc, ru);
+                rm->victim_ru_cnt++;
+            }            
             // if (ru->ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED ){
             //     rm = ru->ruh->ru_mgmt; 
             //     pqueue_insert(rm->victim_ru_pq, ru);
@@ -2041,6 +2113,60 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         victim_ru = pqueue_randpop(ru_mgmt->victim_ru_pq);
         ftl_assert(victim_ru != NULL);
         break;
+    
+    case GC_NOISY_RUH_CUSTOM :
+        /** 
+         * gc_candidate
+         * for i,active_ruhs :
+         *      
+         *      if gc_candidate != NULL:
+         *          ru = pqueue_peek(ruh[i]->victim_ru_pq);
+         *          if ru->util < gc_candidate->util :
+         *              remember i
+         *              gc_candidate = ru
+         *      else :
+         *          gc_candidate = pqueue_peek(ruh[i]->victim_ru_pq);
+         *      if gc_candidate
+         *
+         * 
+         * return gc_candidate
+         * **/
+        
+        FemuReclaimUnit * ru=NULL;
+        int remember = -1;
+        for (int i =0 ; i < ssd->nruhs; i++){
+            ftl_assert( ssd->ruhs[i].ru_mgmt != NULL);
+            if ( ssd->ruhs[i].ru_in_use_cnt > ssd->ruhs[i].ru_mgmt->custom_gc_threshold ){
+                if (victim_ru == NULL ){
+                    remember = i ;
+                    victim_ru = pqueue_peek(ssd->ruhs[i].ru_mgmt->victim_ru_pq);
+                }else{
+                    ru = pqueue_peek(ssd->ruhs[i].ru_mgmt->victim_ru_pq);
+                    if (ru==NULL){
+                        continue;
+                    }
+                    else if ( ru->vpc < victim_ru->vpc ){
+                        remember = i;
+                        victim_ru = ru;
+                    }
+                }
+            }
+        }
+        ru_mgmt = ssd->rg[rgid].ru_mgmt;
+        if(remember < 0){
+            ftl_err("No reclaim unit to GC. Select in Global greedy : ");
+            victim_ru = pqueue_pop(ru_mgmt->victim_ru_pq);
+            ru_mgmt->victim_ru_cnt-=1;
+            pqueue_remove(ssd->ruhs[victim_ru->ruh->ruhid].ru_mgmt->victim_ru_pq, victim_ru);
+            ssd->ruhs[victim_ru->ruh->ruhid].ru_mgmt->victim_ru_cnt-=1;
+            return victim_ru;
+        }
+
+        victim_ru = pqueue_pop(ssd->ruhs[remember].ru_mgmt->victim_ru_pq);
+        ftl_assert(victim_ru != NULL);
+        pqueue_remove(ru_mgmt->victim_ru_pq, victim_ru);
+
+        break; 
 
     case GC_SELECTIVE_RUH : 
     case GC_EXPLOIT_SEQUENTIAL : 
@@ -2266,9 +2392,14 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     if(!force){
         //background & ru->util high then skip this ru
         if(victim_ru->utilization > 0.05){
-            //ftl_err("victim RU util is high(%f), gc skip (victim %d free %lu full %d total %lu victim_ru->util %2.f)\n",victim_ru->utilization , rm->victim_ru_cnt, rm->free_ru_cnt, rm->full_ru_cnt, ( rm->victim_ru_cnt+rm->free_ru_cnt+rm->full_ru_cnt) ,  victim_ru->utilization);
+            ftl_err("victim RU util is high(%f), gc skip (victim %d free %lu full %d total %lu victim_ru->util %2.f)\n",victim_ru->utilization , rm->victim_ru_cnt, rm->free_ru_cnt, rm->full_ru_cnt, ( rm->victim_ru_cnt+rm->free_ru_cnt+rm->full_ru_cnt) ,  victim_ru->utilization);
             pqueue_insert(rm->victim_ru_pq, victim_ru);
             rm->victim_ru_cnt++;
+            if( check_ruh_gc_entry(ssd, victim_ru) ){
+                rm = victim_ru->ruh->ru_mgmt;
+                pqueue_insert(rm->victim_ru_pq, victim_ru);
+                rm->victim_ru_cnt++;
+            }
             return -1;
         }
     }else{
@@ -2351,7 +2482,7 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
         nvme_fdp_stat_inc(&ssd->ruhs[ssd->nruhs-1].ruh->mbmw, (uint64_t) ( vpc_cnt * spp->secsz * spp->secs_per_pg ));   //(3)
     }
 
-   
+
     if (ssd->ruhs[ victim_ru->ruh->ruhid].ru_in_use_cnt > 0)
         ssd->ruhs[ victim_ru->ruh->ruhid].ru_in_use_cnt -= 1;
 
@@ -2750,6 +2881,16 @@ uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba,
     ru = ns->endgrp->fdp.ruhs[ruhid].rus[rg]; // TODO : After new ru, this doesn't points to the new one
     // #if FEMU_FDP_LATENCY_DISABLE
     femu_ru = femu_fdp_get_ru(ssd, rg, ruhid);
+    if ( unlikely(femu_ru == NULL) ) {
+        FemuRuHandle *fruh = &ssd->ruhs[ruhid];
+        fruh->rus[rg] = fdp_get_new_ru(ssd, rg, ruhid);
+        fruh->curr_ru = fruh->rus[rg];
+        fruh->ruh->rus[rg] = fruh->rus[rg]->nvme_ru;
+        //ssd->ruhs[ruhid].rus[rg]->nvme_ru == 
+        //ftl_assert((ssd->ruhs[i].rus[j]->nvme_ru == nvme_ruh->rus[j])); // qemu-system-x86_64: ../hw/femu/bbssd/ftl.c:976: femu_fdp_ssd_init_ru_handles: Assertion `(ssd->ruhs[i].rus[j]->ru == ruh->rus[j])' failed.
+        //ftl_assert((ssd->ruhs[i].rus[j]->ruh == &ssd->ruhs[i]));
+    }
+
     if ((ru != femu_ru->nvme_ru))
     {
         ftl_err(" ru %p != femu_ru->ru %p in ruh %d( ruh %d : nvme_ruh->rus[rg] at %p and ru at %p) \n", ru, femu_ru->nvme_ru, ruhid, ruhid, ns->endgrp->fdp.ruhs[ruhid].rus[rg], ru);

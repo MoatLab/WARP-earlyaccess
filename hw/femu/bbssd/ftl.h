@@ -247,6 +247,7 @@ enum{
     GC_GLOBAL_CB = 1, 
     GC_GLOBAL_RAND = 2,
     GC_GLOBAL_WARM = 3,
+    GC_NOISY_RUH_CUSTOM = 4,
     GC_SELECTIVE_RUH = 10,
     GC_SELECTIVE_RUH_ADV = 11,
     GC_SELECTIVE_MIDAS_OP = 12,
@@ -258,7 +259,6 @@ enum{
 typedef struct ru_mgmt{
 
     int mgmt_type;
-
 
     QTAILQ_HEAD(free_ru_list, FemuReclaimUnit) free_ru_list;
     //pqueue_t *victim_ru_pq_type_init;    
@@ -275,6 +275,8 @@ typedef struct ru_mgmt{
     int victim_ru_cnt_type_permnt;
     int victim_ru_cnt;
     int full_ru_cnt;
+    int custom_gc_threshold;
+    
     uint64_t gc_thres_rus;
     uint64_t gc_thres_rus_high;
 
@@ -288,8 +290,7 @@ typedef struct ru_mgmt{
     int list_waf_transitory_len;
     float waf_score_global;
     float waf_score_transitory;
-
-    float utilization;
+    float utilization_overall;
 
 
 }ru_mgmt;
