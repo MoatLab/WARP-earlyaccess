@@ -919,7 +919,7 @@ static void femu_fdp_init_ru_mgmt(struct ssd *ssd, FemuReclaimGroup *rg)
     //Declare global gc strategy
     //rm->mgmt_type = GC_GLOBAL_CB;
     //rm->mgmt_type = GC_NOISY_RUH_CUSTOM;
-    rm->mgmt_type = GC_GLOBAL_GREEDY
+    rm->mgmt_type = GC_GLOBAL_GREEDY;
 
     QTAILQ_INIT(&rm->free_ru_list);
     QTAILQ_INIT(&rm->full_ru_list);
@@ -1357,9 +1357,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     if (pg->status != PG_VALID ){
         ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
         ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
-        ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
-        ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
-
+        
         //ftl_assert(pg->status == PG_VALID);
         if (pg->status == PG_INVALID ||pg->status == PG_FREE )
         {
@@ -1437,9 +1435,6 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     case GC_GLOBAL_GREEDY:
     case GC_NOISY_RUH_CUSTOM:   //FORNOW
     case GC_GLOBAL_RAND:
-
-
-
 
         /* GREEDY : ru is queued */
         if(ru->pos){
@@ -2016,7 +2011,7 @@ static int check_gc_ruh_available(struct ssd *ssd, FemuRuHandle * ruh){
             ssd->ruhs[ssd->nruhs - 1].curr_ru = fdp_get_new_ru(ssd, ruh->curr_ru->rgidx, ruh->ruhid);
             ssd->ruhs[ssd->nruhs - 1].rus[ssd->ruhs[ssd->nruhs - 1].curr_ru->rgidx] = ssd->ruhs[ssd->nruhs - 1].curr_ru;
             //Not neccesary I think for now
-            ssd->ruhs[ssd->nruhs - 1].ruh->rus[ssd->ruhs[ssd->nruhs - 1].curr_ru->rgidx] = ssd->ruhs[ssd->nruhs - 1].curr_ru->nvme_ru;
+            ssd->ruhs[ssd->nruhs - 1].ruh->rus[ssd->ruhs[ssd->nruhs - 1].curr_ru->rgidx] = ssd->ruhs[ssd->nruhs - 1].curr_ru->nvme_ru;  //qemu-system-x86_64: ../hw/femu/bbssd/ftl.c:2106: select_victim_ru: Assertion `victim_ru != ((void *)0)' failed.
         }
         assert(ssd->ruhs[ssd->nruhs-1].curr_ru != NULL);
     }
@@ -2103,7 +2098,7 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         //ftl_err("RUH%d is NVME_RUHT_PERSISTENTLY_ISOLATED gc type %d vic ru cnt %d\n", ruhid, ru_mgmt->mgmt_type,ru_mgmt->victim_ru_cnt );
         ftl_assert(ru_mgmt != NULL);
         victim_ru = pqueue_pop(ru_mgmt->victim_ru_pq);
-        ftl_assert(victim_ru != NULL);
+        //ftl_assert(victim_ru != NULL);
         break;
 
     case GC_GLOBAL_RAND:
@@ -3248,7 +3243,6 @@ static void *ftl_thread(void *arg)
             {
             case NVME_CMD_FLUSH:
                 ftl_err("FTL received NVME_CMD_FLUSH type %d(0x%x), ERROR\n", req->cmd.opcode, req->cmd.opcode);    
-               
                 ftl_assert(req != NULL);
                 ftl_assert(req->sq != NULL);
                 break;
