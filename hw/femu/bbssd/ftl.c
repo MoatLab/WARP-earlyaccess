@@ -1353,17 +1353,21 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     /* update corresponding page status */
     pg = get_pg(ssd, ppa);
     ftl_assert(pg != NULL);
-    ftl_assert(pg->status == PG_VALID);
     if (pg->status != PG_VALID ){
         ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
         ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
         
         //ftl_assert(pg->status == PG_VALID);
-        if (pg->status == PG_INVALID ||pg->status == PG_FREE )
+        if (pg->status == PG_INVALID )
         {
             //page already invalidated.
+            ftl_err("        page already invalidated. ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
             return;
-        }else {
+        }
+        else {
+            ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
+            ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
+            ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
             ftl_err("        ftl_assert(pg->status == PG_VALID)! ppa.g.blk %d pg->status  %d (VALID %d)\n", ppa->g.blk ,pg->status , PG_VALID);
 
             ftl_assert(pg->status == PG_VALID);            //Can free page hit this?
