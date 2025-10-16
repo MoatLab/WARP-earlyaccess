@@ -505,19 +505,16 @@ static FemuReclaimUnit *fdp_advance_ru_pointer(struct ssd *ssd, FemuReclaimGroup
                             pqueue_insert(rm->victim_ru_cb, curr_ru);
 
                         }else{
+                            ru->utilization = (float) ru->vpc / ru->npages;
                             pqueue_insert(rm->victim_ru_pq, curr_ru);
                             if ( check_ruh_gc_entry(ssd, curr_ru) ){
                                 rm = curr_ru->ruh->ru_mgmt;
                                 ftl_assert(rm!=NULL);
                                 pqueue_insert(rm->victim_ru_pq, curr_ru);
                             }
-
                             //ftl_debug("Err if rm->mgmt_type == GC_GLOBAL_CB");
-
                         }
                         rm->victim_ru_cnt++;
-                        //
-
 
                     }
 
@@ -722,10 +719,7 @@ static FemuReclaimUnit *femu_fdp_get_ru(struct ssd *ssd, uint16_t rgid, uint16_t
         }
         ftl_assert (ruh->curr_ru==ruh->rus[rgid]);
     }
-
     return ruh->rus[rgid]; // NULL
-    // }
-    // return ruh->curr_ru;
 }
 #ifdef SSD_STREAM_WRITE
 
@@ -1388,6 +1382,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     /* update corresponding line status */
     line = get_line(ssd, ppa);
     ftl_assert(line->ipc >= 0 && line->ipc < spp->pgs_per_line);
+    
     if (line->vpc == spp->pgs_per_line)
     {
         ftl_assert(line->ipc == 0); //qemu-system-x86_64: ../hw/femu/bbssd/ftl.c:1394: mark_page_invalid: Assertion `line->ipc == 0' failed. WHEN RUN FIO twice
@@ -1448,6 +1443,7 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         }
         else{
             ru->vpc--;
+            ru->utilization = ((float)ru->vpc / (float)(ru->vpc+ru->ipc)); 
         }
 
 
@@ -1809,7 +1805,7 @@ static void gc_write_page_fdp_style(struct ssd *ssd, struct ppa *old_ppa, FemuRe
     new_lun = get_lun(ssd, &new_ppa);
     new_lun->gc_endtime = new_lun->next_lun_avail_time;
 }
-a
+
 /* here ppa identifies the block we want to clen */
 // static void clean_one_block(struct ssd *ssd, struct ppa *ppa)
 // {
@@ -2255,7 +2251,6 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     FemuRuHandle *ruh = &ssd->ruhs[ruhid];
     FemuReclaimUnit *victim_ru = NULL;
     FemuReclaimUnit *new_ru = NULL;
-    //struct nand_block *blk_p= NULL;
     struct ru_mgmt * rm = ssd->rg[rgid].ru_mgmt;
     struct line *victim_line = NULL;
     struct nand_lun *lunp;
@@ -2289,6 +2284,11 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
 
     if(!force){
         //background & ru->util high then skip this ru
+        //float org = victim_ru->utilization ; 
+        victim_ru->utilization = (float) victim_ru->vpc / (victim_ru->vpc+victim_ru->ipc);  //Preventing crazy things
+        //ftl_assert( org >= victim_ru->utilization -0.01 );
+        //ftl_assert( org <= victim_ru->utilization +0.01 );
+        
         if(victim_ru->utilization > 0.05){
             //ftl_err("victim RU util is high(%f), gc skip (victim %d free %lu full %d total %lu victim_ru->util %2.f)\n",victim_ru->utilization , rm->victim_ru_cnt, rm->free_ru_cnt, rm->full_ru_cnt, ( rm->victim_ru_cnt+rm->free_ru_cnt+rm->full_ru_cnt) ,  victim_ru->utilization);
             pqueue_insert(rm->victim_ru_pq, victim_ru);
@@ -2332,12 +2332,12 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     for (int i = 0; i < spp->lines_per_ru; ++i)
     {
         // OPT: need loop unrolling?
-        //ftl_log("       spp->lines_per_ru %d victim_ru->lines[%d]\n", spp->lines_per_ru, i);
         victim_line = victim_ru->lines[i];
         ppa.g.blk = victim_line->id;
         //ftl_log("GC-ing ch[%d]w[%d]line:%d, vpc=%d,ipc=%d,victim=%d,full=%d,free=%d\n", spp->nchs, spp->luns_per_ch, ppa.g.blk,
         //          victim_line->vpc, victim_line->ipc, ssd->lm.victim_line_cnt, ssd->lm.full_line_cnt,
         //          ssd->lm.free_line_cnt);
+
         // copy back valid data
         for (ch = 0; ch < spp->nchs; ++ch)
         {
@@ -2347,11 +2347,8 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
                 ppa.g.lun = lun;
                 ppa.g.pl = 0;
                 lunp = get_lun(ssd, &ppa);
-                //blk_p = get_blk(ssd,&ppa);
                 vpc_cnt += clean_one_block_fdp_style(ssd, &ppa, new_ru);
                 cnt+=1;
-                //#fdp_log("100p GC causing high waf \n");
-                //#clean_one_block_fdp_style(ssd, &ppa, new_ru);
                 mark_block_free(ssd, &ppa);
                 if (spp->enable_gc_delay)
                 {
