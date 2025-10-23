@@ -2275,11 +2275,12 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     ftl_assert(ruh != NULL);
     ftl_assert(ruh->rus[rgid] != NULL);
 
+    ruh = victim_ru->ruh; //Thanks for reporting...
+
     if ((victim_ru == ruh->rus[rgid]) || (victim_ru == victim_ru->ruh->rus[rgid]) || victim_ru == victim_ru->ruh->curr_ru )
     {
-        ftl_err(" Victim RU was in active state \n"); //?
+        ftl_err(" Victim RU was in active state(currently being written) \n"); //Really happens?
         abort();        //This needs work
-        ruh = victim_ru->ruh;
     }
 
     if(!force){
