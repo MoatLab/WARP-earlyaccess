@@ -1986,13 +1986,21 @@ static int check_gc_ruh_available(struct ssd *ssd, FemuRuHandle * ruh){
             //Not neccesary I think for now
             ssd->ruhs[ssd->nruhs - 1].ruh->rus[ssd->ruhs[ssd->nruhs - 1].curr_ru->rgidx] = ssd->ruhs[ssd->nruhs - 1].curr_ru->nvme_ru;  //qemu-system-x86_64: ../hw/femu/bbssd/ftl.c:2106: select_victim_ru: Assertion `victim_ru != ((void *)0)' failed.
         }
-        assert(ssd->ruhs[ssd->nruhs-1].curr_ru != NULL);
+        if (ssd->ruhs[ssd->nruhs - 1].curr_ru == NULL){
+                //        assert(ssd->ruhs[ssd->nruhs-1].curr_ru != NULL); //This means no space left
+                return -1;
+        }
+
     }
     else if(ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED){
         if(ruh->gc_ru == NULL){
             ruh->gc_ru = fdp_get_new_ru(ssd, ruh->curr_ru->rgidx, ruh->ruhid);
             ftl_debug("check_gc_ruh_available ruh %d gc_ru idx %d , %p call new ru  \n", ruh->ruhid, ruh->gc_ru->ruidx, ruh->gc_ru );
-            assert(ruh->gc_ru != NULL);
+
+            if (ruh->gc_ru == NULL){
+                //assert(ruh->gc_ru != NULL);//This means no space left
+                return -1;
+            }
         }
     }else{
         ftl_err("Unsupported RUH type : %d\n",ruh->ruh_type);
@@ -2258,8 +2266,9 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     int ch, lun;
     int vpc_cnt=0;
     int cnt=0;
-
-    // TODO
+    int ret = 0;
+    
+    // Resolved Issues :
     //  issue 1. We lose pointer to old RU after gc. We lose ruh->curr_ru and ruh->rus[rgid] because the pointer is not changed to valid copy ru
     //  issue 2. About new ru, after gc, new ru that have valid copy doesn't know whether it has valid data or not.
     
@@ -2268,19 +2277,65 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
         ftl_err(" unable to find victim RU, gc skip\n");
         return -1;
     }
+
+    ruh = victim_ru->ruh; //Thanks for reporting...
+
     ftl_assert(victim_ru != NULL);
     ftl_assert(victim_ru->ruh != NULL);
     ftl_assert(victim_ru->ruh->rus != NULL);
     ftl_assert(victim_ru->ruh->rus[rgid] != NULL);
     ftl_assert(ruh != NULL);
-    ftl_assert(ruh->rus[rgid] != NULL);
+    //ftl_assert(ruh->rus[rgid] != NULL);   //Handles later
 
-    ruh = victim_ru->ruh; //Thanks for reporting...
 
-    if ((victim_ru == ruh->rus[rgid]) || (victim_ru == victim_ru->ruh->rus[rgid]) || victim_ru == victim_ru->ruh->curr_ru )
+    if ( ((ruh->rus[rgid] != NULL) && (victim_ru == ruh->rus[rgid])) || (victim_ru == victim_ru->ruh->rus[rgid]) || victim_ru == victim_ru->ruh->curr_ru )
     {
         ftl_err(" Victim RU was in active state(currently being written) \n"); //Really happens?
         abort();        //This needs work
+    }
+
+    /**
+     * @brief Rules for FDP GC
+     * 
+     * GC allocates valid pages into new reclaim unit.
+     * Base on the RUH type, this new RU(new_ru) could be 
+     * 
+     * 1) GC_RUH's active RU (II)
+     * 2) victim RU's RUH (PI)
+     * 
+     */
+    if (ruh->ruh_type == NVME_RUHT_INITIALLY_ISOLATED){
+        if(ssd->ruhs[ssd->nruhs-1].curr_ru == NULL || ssd->ruhs[ssd->nruhs-1].rus[rgid] != NULL ){
+            if ((ret = check_gc_ruh_available(ssd, ruh)) < 0 ){
+                ftl_err("No free space left in device. \n");
+                ftl_assert(false && __LINE__ );
+            }
+        }
+        new_ru = ssd->ruhs[ssd->nruhs-1].curr_ru;
+        //ftl_err("GC victim ru id %d at %p (vpc %d:%d ipc %d) new ru at %p new_ru->ruh->ruhid %d (vpc %d:%d ipc %d) \n", victim_ru->ruidx, victim_ru,victim_ru->vpc, victim_ru->lines[0]->vpc, victim_ru->lines[0]->ipc , new_ru, new_ru->ruh->ruhid, new_ru->vpc, new_ru->lines[0]->vpc, new_ru->lines[0]->ipc );
+        
+        ftl_assert(new_ru->ruh->ruhid == ssd->ruhs[ssd->nruhs-1].ruhid); // II -> new_ru should be one of GC RUH; Assertion for future weird bug.
+        ftl_assert(new_ru->ruh == &ssd->ruhs[ssd->nruhs-1]);     // II -> new_ru should be one of GC RUH; Assertion for future weird bug.
+
+    }else if(ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED){
+        if (ruh->gc_ru == NULL){
+            if ((ret = check_gc_ruh_available(ssd, ruh)) < 0 ){
+                ftl_err("No free space left in device. \n");
+                ftl_assert(false && __LINE__ );
+            }
+        }
+        new_ru = ruh->gc_ru;
+
+        ftl_assert(new_ru->ruh->ruhid == ruh->ruhid);// PI -> new_ru should be one of GC RUH;
+        ftl_assert(new_ru->ruh == ruh);// PI -> new_ru should be one of GC RUH;
+
+    }
+    else
+    {
+        ftl_err("Undefined RUH type. If you want new Ruht, then welcome ! \n");
+        ftl_assert(false && __LINE__ );
+        abort();        //This needs work
+        return 0;
     }
 
     if(!force){
@@ -2306,27 +2361,9 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
     }else{
         ftl_debug("[Forground GC]");
     }
+
     ftl_debug( " FDP GC do_gc_fdp_style BEGIN : victim ru idx %d line id %d, %p rg->free_ru_cnt %lu lm->free_line_cnt %d \n",victim_ru->ruidx, victim_ru->lines[0]->id, victim_ru ,ssd->rg[rgid].ru_mgmt->free_ru_cnt, ssd->lm.free_line_cnt);
 
-    if (ruh->ruh_type == NVME_RUHT_INITIALLY_ISOLATED){
-        if(ssd->ruhs[ssd->nruhs-1].curr_ru == NULL || ssd->ruhs[ssd->nruhs-1].rus[rgid] != NULL ){
-            check_gc_ruh_available(ssd, ruh);
-        }
-        new_ru = ssd->ruhs[ssd->nruhs-1].curr_ru;
-        ftl_err("GC victim ru id %d at %p (vpc %d:%d ipc %d) new ru at %p new_ru->ruh->ruhid %d (vpc %d:%d ipc %d) \n", victim_ru->ruidx, victim_ru,victim_ru->vpc, victim_ru->lines[0]->vpc, victim_ru->lines[0]->ipc , new_ru, new_ru->ruh->ruhid, new_ru->vpc, new_ru->lines[0]->vpc, new_ru->lines[0]->ipc );
-
-    }else if(ruh->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED){
-        if (ruh->gc_ru == NULL){
-            check_gc_ruh_available(ssd, ruh);
-        }
-        new_ru = ruh->gc_ru;
-    }
-    else if (ruh->ruh_type == NVME_RUHT_INITIALLY_ISOLATED && (new_ru = fdp_get_new_ru(ssd, rgid, ruhid)) == NULL)
-    {
-        ftl_err("GC could not fetch new ru(May be ssd is full?). \n");
-        abort();        //This needs work
-        return 0;
-    }
 
     //ftl_debug( " [BEFORE RU status] : victim ru idx %d , %p  ruh %d rus[%d] %d at %p curr_ru %d at %p (nvme_ru %p ), gc_ru %d at %p (nvme_ru %p)\n",victim_ru->ruidx , victim_ru ,ruhid, rgid, ruh->rus[rgid]->ruidx, ruh->rus[rgid], ruh->curr_ru->ruidx, ruh->curr_ru, ruh->curr_ru->nvme_ru, ruh->gc_ru->ruidx, ruh->gc_ru, ruh->gc_ru->nvme_ru); //OK
     //mapping changing 
