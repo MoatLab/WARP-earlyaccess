@@ -2517,7 +2517,7 @@ static uint64_t ssd_read(struct ssd *ssd, NvmeRequest *req)
     {
         ftl_err("start_lpn=%" PRIu64 ",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);
     }
-
+    //ftl_debug("start_lpn=%" PRIu64 ", end_lpn=%" PRIu64 ",tt_pgs=%d\n", start_lpn, end_lpn, ssd->sp.tt_pgs);
     /* normal IO read path */
     for (lpn = start_lpn; lpn <= end_lpn; lpn++)
     {
@@ -2812,6 +2812,15 @@ uint64_t nvme_do_write_fdp(FemuCtrl *n, NvmeRequest *req, uint64_t slba,
     }
     // get reclaim unit handle id by placement handle id
     ruhid = ns->fdp.phs[ph]; // ns -> handler index
+
+    /************************/
+    //enforcing noFDP
+#ifdef FORCE_NOFDP
+    ph=0;
+    ruhid = ns->fdp.phs[ph];
+#endif
+    /************************/
+
     // ru = &ns->endgrp->fdp.ruhs[ruhid].rus[rg];
     ru = ns->endgrp->fdp.ruhs[ruhid].rus[rg]; // TODO : After new ru, this doesn't points to the new one
     // #if FEMU_FDP_LATENCY_DISABLE
@@ -2952,8 +2961,8 @@ static uint64_t ssd_trim(struct ssd *ssd, NvmeRequest *req)
         //        range_idx, trimmed_pages, already_invalid);
     }
 
-    // ftl_debug("TRIM: Completed - %d pages trimmed, %d already invalid, %d out of bounds across %d ranges\n", 
-    //        total_trimmed_pages, total_already_invalid, total_out_of_bounds, nr_ranges);
+    ftl_debug("TRIM: Completed - %d pages trimmed, %d already invalid, %d out of bounds across %d ranges\n", 
+           total_trimmed_pages, total_already_invalid, total_out_of_bounds, nr_ranges);
 
     // Free the ranges array
     g_free(ranges);
