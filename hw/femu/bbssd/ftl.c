@@ -792,7 +792,8 @@ static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n)
     spp->pgs_per_line = spp->blks_per_line * spp->pgs_per_blk;              // 128 * 512 = 65536
     spp->secs_per_line = spp->pgs_per_line * spp->secs_per_pg;
     spp->tt_lines = spp->blks_per_lun; /* TODO: to fix under multiplanes */ // = 2048 * 1
-
+    
+    spp->lazy_gc_pcent = n->bb_params.lazy_gc_pcent / 100.0;
     spp->gc_thres_pcent = n->bb_params.gc_thres_pcent / 100.0;
     spp->gc_thres_lines = (int)((1 - spp->gc_thres_pcent) * spp->tt_lines);
     spp->gc_thres_pcent_high = n->bb_params.gc_thres_pcent_high / 100.0;
@@ -2029,7 +2030,6 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
     FemuReclaimUnit *victim_ru = NULL;
     //QTAILQ_HEAD(ru_list_temp, FemuReclaimUnit) ru_list_temp;
     struct ru_mgmt *ru_mgmt = ssd->rg[rgid].ru_mgmt;
-    //ftl_err("   INSIDE  select_victim_ru\n");
     ru_mgmt->mgmt_type = GC_GLOBAL_GREEDY;
     //ru_mgmt->mgmt_type = GC_GLOBAL_CB;
     //ru_mgmt->mgmt_type = GC_GLOBAL_RAND;
@@ -2049,8 +2049,6 @@ static FemuReclaimUnit *select_victim_ru(struct ssd *ssd, uint16_t rgid, uint16_
         ftl_assert(ru_mgmt != NULL);
         victim_ru = pqueue_pop(ru_mgmt->victim_ru_cb);
         ftl_debug("victim_ru %p rm->victim_cnt %d \n",victim_ru, ru_mgmt->victim_ru_cnt);
-
-        //ftl_assert(victim_ru != NULL);  // select_victim_ru: Assertion `victim_ru != ((void *)0)' failed.
         break;
     case GC_GLOBAL_GREEDY:
         ru_mgmt = ssd->rg[rgid].ru_mgmt;
@@ -2345,7 +2343,7 @@ static int do_gc_fdp_style(struct ssd *ssd, uint16_t rgid, uint16_t ruhid, bool 
         //ftl_assert( org >= victim_ru->utilization -0.01 );
         //ftl_assert( org <= victim_ru->utilization +0.01 );
         
-        if(victim_ru->utilization > 0.05){
+        if(victim_ru->utilization > spp->lazy_gc_pcent){
             //ftl_err("victim RU util is high(%f), gc skip (victim %d free %lu full %d total %lu victim_ru->util %2.f)\n",victim_ru->utilization , rm->victim_ru_cnt, rm->free_ru_cnt, rm->full_ru_cnt, ( rm->victim_ru_cnt+rm->free_ru_cnt+rm->full_ru_cnt) ,  victim_ru->utilization);
             pqueue_insert(rm->victim_ru_pq, victim_ru);
             rm->victim_ru_cnt++;

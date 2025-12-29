@@ -128,7 +128,7 @@ struct ssdparams {
     int ch_xfer_lat;  /* channel transfer latency for one page in nanoseconds
                        * this defines the channel bandwith
                        */
-
+    double lazy_gc_pcent;
     double gc_thres_pcent;
     int gc_thres_lines;
     double gc_thres_pcent_high;
