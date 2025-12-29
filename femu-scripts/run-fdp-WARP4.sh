@@ -8,7 +8,7 @@
 # image directory
 IMGDIR=/data/inho/images
 # Virtual machine disk image
-OSIMGF=$IMGDIR/newimg2.qcow2
+OSIMGF=/mnt/sda1/fast_ae/u20s.qcow2
 
 # Configurable SSD Controller layout parameter4s (must be power of 2)
 # ---- page & RU ---- # 
