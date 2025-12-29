@@ -1739,7 +1739,8 @@ typedef struct BbCtrlParams {
     int pg_wr_lat;
     int blk_er_lat;
     int ch_xfer_lat;
-
+    
+    int lazy_gc_pcent;
     int gc_thres_pcent;
     int gc_thres_pcent_high;
 } BbCtrlParams;

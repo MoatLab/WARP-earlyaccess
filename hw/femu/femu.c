@@ -1400,7 +1400,7 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("pg_wr_lat", FemuCtrl, bb_params.pg_wr_lat, 200000),
     DEFINE_PROP_INT32("blk_er_lat", FemuCtrl, bb_params.blk_er_lat, 2000000),
     DEFINE_PROP_INT32("ch_xfer_lat", FemuCtrl, bb_params.ch_xfer_lat, 0),
-    DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.lazy_gc_pcent, 5),
+    DEFINE_PROP_INT32("lazy_gc_pcent", FemuCtrl, bb_params.lazy_gc_pcent, 5),
     DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.gc_thres_pcent, 75),
     DEFINE_PROP_INT32("gc_thres_pcent_high", FemuCtrl, bb_params.gc_thres_pcent_high, 95),
     DEFINE_PROP_STRING("fdp.ruhs", NvmeNamespace, params.fdp.ruhs),
