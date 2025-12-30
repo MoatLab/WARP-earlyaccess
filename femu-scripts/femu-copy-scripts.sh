@@ -4,7 +4,7 @@
 
 FSD="../femu-scripts"
 
-CPL=(pkgdep.sh femu-compile.sh run-whitebox.sh run-blackbox.sh run-blackbox-fdp.sh run-fdp-RU256.sh run-fdp-WARP4.sh run-fdp-RU128-WARPA2.sh run-nossd.sh run-zns.sh pin.sh ftk)
+CPL=(pkgdep.sh femu-compile.sh run-whitebox.sh run-blackbox.sh run-blackbox-fdp.sh run-fdp-RU256.sh run-fdp-WARP4.sh run-fdp-RU128-WARPA2.sh run_fdp_WARP256II10.sh run_fdp_WARP256PI10.sh run_fdp_WARP256PI14.sh run_fdp_WARP256II14.sh run-nossd.sh run-zns.sh pin.sh ftk)
 
 echo ""
 echo "==> Copying following FEMU script to current directory:"
