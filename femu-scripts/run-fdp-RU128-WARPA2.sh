@@ -6,61 +6,40 @@
 #./vfio-bind.sh 0000:8b:00.0
 
 # image directory
-#IMGDIR=/data/inho/images
 IMGDIR=$HOME/image
 # Virtual machine disk image
 # OSIMGF=$IMGDIR/newimg2.qcow2
 OSIMGF=$IMGDIR/u20s.qcow2
 
+
 # Configurable SSD Controller layout parameter4s (must be power of 2)
-# ---- page & RU ---- # 
 secsz=512
-secs_per_pg=8		#4KiB
-#secs_per_pg=32       #16KiB 
-
-#pgs_per_blk=512 	#1024*4K:4MB (RU : 256MiB)
-#pgs_per_blk=256    #256*16K:4MB (RU : 256MiB)
-pgs_per_blk=2048 	#2048*4K:8MB (RU : 512MiB)
-
-# ---- RU & OP ---- # 
-#  RU 256 MiB  # 
-#blks_per_pl=1075 	#20% 4MB * 8 * 8 =RU 256MiB -> 1075 = (224*1.2*1024)/256  #! WAF noDIFF
-#blks_per_pl=985 	#10% 4MB * 8 * 8 =RU 256MiB -> 985 = (224*1.1*1024)/256   #! WAF DIFF
-#blks_per_pl=1126 	#10% 4MB * 8 * 8 =RU 256MiB -> 1126 = (256*1.1*1024)/256   #! WAF DIFF
-#  RU 512 MiB # 
-#blks_per_pl=493 	#8MB * 8 * 8 =RU 512MiB -> 985 = (224*1.1*1024)/512 
-blks_per_pl=563 	#10% 8MB * 8 * 8 =RU 512MiB -> 563 = (256*1.1*1024)/512   
-
+secs_per_pg=8		#4KiB 
+pgs_per_blk=512 	#512*4K:2MB (RU : 128MiB)
+blks_per_pl=4086    #2MB * 8 * 8 =RU 128MiB -> 4085.76 = (448*1.14*1024)/128 
 pls_per_lun=1       # still not support multiplanes		
 luns_per_ch=8		# 16G                256*8
 nchs=8  			# 128G              256*8*8
-#ssd_size=229376		# in MegaBytes  
-ssd_size=262144		#  in MegaBytes  
-
+ssd_size=458752		# in MegaBytes  
 #                     #    128GiB ( 156GiB )
 #                     #    256GiB ( 307GiB)   26214
 #                     #    512GiB ( 614GiB)   524288 
 number_of_ru=$((blks_per_pl * pls_per_lun))
 # Latency in nanoseconds
-#pg_rd_lat=10000     #10us
 #pg_rd_lat=40000     #40us
-pg_rd_lat=60000     #60us
-
-#pg_wr_lat=10000    #10us -> 500us  : 50us   : 5us : 2.5us      1
-#pg_wr_lat=50000    #50us
 #pg_wr_lat=200000    #200us
-pg_wr_lat=30000    #400us
-
-#ch_xfer_lat=0
-
-#blk_er_lat=40000    #40us 2000us : 200us  : 20us: 10us        4
-#blk_er_lat=500000  #400us
-blk_er_lat=1000000  #1ms
 #blk_er_lat=2000000  #2ms
+#ch_xfer_lat=0
+pg_rd_lat=10000     #10us
+#pg_wr_lat=50000    #50us
+#blk_er_lat=500000  #400us
+pg_wr_lat=5000    # 500us  : 50us   : 5us : 2.5us
+blk_er_lat=20000  # 2000us : 200us  : 20us: 10us
+
 
 ch_xfer_lat=0
 # GC Threshold (1-100)
-lazy_gc_pcent=40
+custom_trim_all=true
 gc_thres_pcent=90
 gc_thres_pcent_high=99
 
@@ -85,7 +64,7 @@ FEMU_OPTIONS=${FEMU_OPTIONS}",pg_rd_lat=${pg_rd_lat}"
 FEMU_OPTIONS=${FEMU_OPTIONS}",pg_wr_lat=${pg_wr_lat}"
 FEMU_OPTIONS=${FEMU_OPTIONS}",blk_er_lat=${blk_er_lat}"
 FEMU_OPTIONS=${FEMU_OPTIONS}",ch_xfer_lat=${ch_xfer_lat}"
-FEMU_OPTIONS=${FEMU_OPTIONS}",lazy_gc_pcent=${lazy_gc_pcent}"
+FEMU_OPTIONS=${FEMU_OPTIONS}",custom_trim_all=${custom_trim_all}"
 FEMU_OPTIONS=${FEMU_OPTIONS}",gc_thres_pcent=${gc_thres_pcent}"
 FEMU_OPTIONS=${FEMU_OPTIONS}",gc_thres_pcent_high=${gc_thres_pcent_high}"
 FEMU_OPTIONS=${FEMU_OPTIONS}",fdp.ruhs=${fdpruhs}"
@@ -105,8 +84,8 @@ sudo x86_64-softmmu/qemu-system-x86_64 \
     -name "FEMU-BBSSD-VM" \
     -enable-kvm \
     -cpu host \
-    -smp 64 \
-    -m 64G \
+    -smp 16 \
+    -m 16G \
     -device femu-subsys,id=femu-subsys-0,nqn=subsys0,fdp=on,fdp.nruh=8,fdp.nrg=1,fdp.nru=${number_of_ru} \
     -device virtio-scsi-pci,id=scsi0 \
     -device scsi-hd,drive=hd0 \

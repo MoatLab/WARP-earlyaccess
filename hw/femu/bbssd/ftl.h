@@ -385,7 +385,7 @@ struct ssd {
 
 void ssd_init(FemuCtrl *n);
 void ssd_trim_fdp_style(FemuCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t nlb);
-//#define CYLON_FDP_TRIM_ERASE_ALL
+#define CYLON_FDP_TRIM_ERASE_ALL
 #define FEMU_DEBUG_FTL
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \

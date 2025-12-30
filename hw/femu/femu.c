@@ -680,11 +680,18 @@ static bool nvme_subsys_setup_fdp(NvmeSubsystem *subsys, Error **errp)  //settin
     endgrp->fdp.ruhs = g_new(NvmeRuHandle, endgrp->fdp.nruh);
 
     for (ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
-        endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
+        if (subsys->params.fdp.isolation_mode == 1){
+            endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
+                .ruht = NVME_RUHT_PERSISTENTLY_ISOLATED,
+                .ruha = NVME_RUHA_UNUSED,
+            };
+        }else{
+            endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
+                .ruht = NVME_RUHT_PERSISTENTLY_ISOLATED,
+                .ruha = NVME_RUHA_UNUSED,
+            };
+        }
             //.ruht = NVME_RUHT_INITIALLY_ISOLATED,
-            .ruht = NVME_RUHT_PERSISTENTLY_ISOLATED,
-            .ruha = NVME_RUHA_UNUSED,
-        };
         //Prev Anot : This means g_new statment inside the ruh initialization code is no longer valid.
         //endgrp->fdp.ruhs[ruhid].rus = g_new(NvmeReclaimUnit, endgrp->fdp.nrg);
         endgrp->fdp.ruhs[ruhid].rus = g_new(NvmeReclaimUnit *, endgrp->fdp.nrg);
@@ -732,6 +739,7 @@ static Property nvme_subsystem_props[] = {
     DEFINE_PROP_UINT32("fdp.nrg", NvmeSubsystem, params.fdp.nrg, 1),
     DEFINE_PROP_UINT16("fdp.nruh", NvmeSubsystem, params.fdp.nruh, 0),
     DEFINE_PROP_UINT64("fdp.nru", NvmeSubsystem, params.fdp.nru, 128),
+    DEFINE_PROP_UINT32("fdp.isolation_mode", NvmeSubsystem, params.fdp.isolation_mode, 0),  //0:II 1:PI
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -1401,6 +1409,7 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("blk_er_lat", FemuCtrl, bb_params.blk_er_lat, 2000000),
     DEFINE_PROP_INT32("ch_xfer_lat", FemuCtrl, bb_params.ch_xfer_lat, 0),
     DEFINE_PROP_INT32("lazy_gc_pcent", FemuCtrl, bb_params.lazy_gc_pcent, 5),
+    DEFINE_PROP_BOOL("custom_trim_all", FemuCtrl, bb_params.custom_trim_all, false),
     DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.gc_thres_pcent, 75),
     DEFINE_PROP_INT32("gc_thres_pcent_high", FemuCtrl, bb_params.gc_thres_pcent_high, 95),
     DEFINE_PROP_STRING("fdp.ruhs", NvmeNamespace, params.fdp.ruhs),

@@ -308,6 +308,7 @@ typedef struct NvmeSubsystem {
             uint16_t nruh;
             uint32_t nrg;
             uint64_t nru;
+            uint32_t isolation_mode;
         } fdp;
     } params;
 } NvmeSubsystem;
@@ -1743,6 +1744,9 @@ typedef struct BbCtrlParams {
     int lazy_gc_pcent;
     int gc_thres_pcent;
     int gc_thres_pcent_high;
+
+    bool custom_trim_all;
+
 } BbCtrlParams;
 
 typedef struct ZNSCtrlParams {

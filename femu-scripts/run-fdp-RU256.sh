@@ -6,9 +6,11 @@
 #./vfio-bind.sh 0000:8b:00.0
 
 # image directory
-IMGDIR=/data/inho/images
+IMGDIR=$HOME/image
 # Virtual machine disk image
-OSIMGF=/mnt/sda1/fast_ae/u20s.qcow2
+# OSIMGF=$IMGDIR/newimg2.qcow2
+OSIMGF=$IMGDIR/u20s.qcow2
+
 
 # Configurable SSD Controller layout parameter4s (must be power of 2)
 secsz=512
@@ -39,6 +41,8 @@ blk_er_lat=10000  # 2000us : 200us  : 20us: 10us
 
 ch_xfer_lat=0
 # GC Threshold (1-100)
+lazy_gc_pcent=5
+
 gc_thres_pcent=90
 gc_thres_pcent_high=99
 
@@ -84,10 +88,10 @@ sudo x86_64-softmmu/qemu-system-x86_64 \
     -cpu host \
     -smp 16 \
     -m 8G \
-    -device femu-subsys,id=femu-subsys-0,nqn=subsys0,fdp=on,fdp.nruh=8,fdp.nrg=1,fdp.nru=${number_of_ru} \
+    -device femu-subsys,id=femu-subsys-0,nqn=subsys0,fdp=on,fdp.nruh=8,fdp.nrg=1,fdp.nru=${number_of_ru},fdp.isolation_mode=1 \
     -device virtio-scsi-pci,id=scsi0 \
     -device scsi-hd,drive=hd0 \
-    -drive file=$OSIMGF,if=none,aio=native,cache=none,format=qcow,id=hd0 \
+    -drive file=$OSIMGF,if=none,aio=native,cache=none,format=qcow2,id=hd0 \
     ${FEMU_OPTIONS} \
     -net user,hostfwd=tcp::18080-:22 \
     -net nic,model=virtio \
