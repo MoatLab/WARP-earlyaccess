@@ -8,7 +8,7 @@
 #define UNMAPPED_PPA    (~(0ULL))
 
 #define SSD_STREAM_WRITE 
-#define FORCE_NOFDP
+//#define FORCE_NOFDP
 typedef struct FemuReclaimGroup FemuReclaimGroup;
 typedef struct FemuRuHandle FemuRuHandle;
 typedef struct FemuReclaimUnit FemuReclaimUnit; 
